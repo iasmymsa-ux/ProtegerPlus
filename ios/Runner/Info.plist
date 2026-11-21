@@ -9,6 +9,10 @@
 	<string>O Proteger+ usa o microfone para detectar palavras de socorro e alertar o cuidador em caso de emergência.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>O Proteger+ precisa do microfone para ouvir palavras de emergência e avisar o cuidador automaticamente.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>O Proteger+ precisa de acesso à câmera para fotografar laudos e exames médicos do idoso.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>O Proteger+ precisa de acesso à galeria para anexar fotos de exames e receitas médicas.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

@@ -12,31 +12,110 @@ class AddConsultaView extends StatefulWidget {
 }
 
 class _AddConsultaViewState extends State<AddConsultaView> {
-  late final TextEditingController _horarioController;
   late final TextEditingController _localController;
   late final TextEditingController _profissionalController;
   late final TextEditingController _acompanhanteController;
   late final TextEditingController _motivoController;
 
+  // Data e hora da consulta (separados para facilitar seleção)
+  DateTime? _dataConsulta;
+  TimeOfDay? _horaConsulta;
+
   @override
   void initState() {
     super.initState();
     final r = widget.reminderToEdit;
-    _horarioController = TextEditingController(text: r?.horarioConsulta ?? '');
     _localController = TextEditingController(text: r?.localConsulta ?? '');
     _profissionalController = TextEditingController(text: r?.profissionalConsulta ?? '');
     _acompanhanteController = TextEditingController(text: r?.acompanhanteConsulta ?? '');
     _motivoController = TextEditingController(text: r?.motivoConsulta ?? '');
+
+    // Tenta parsear data/hora guardadas se vier de edição
+    if (r?.dataConsulta != null && r!.dataConsulta!.isNotEmpty) {
+      try {
+        final parts = r.dataConsulta!.split('/');
+        if (parts.length == 3) {
+          _dataConsulta = DateTime(
+            int.parse(parts[2]),
+            int.parse(parts[1]),
+            int.parse(parts[0]),
+          );
+        }
+      } catch (_) {}
+    }
+    if (r?.horarioConsulta != null && r!.horarioConsulta!.isNotEmpty) {
+      try {
+        final parts = r.horarioConsulta!.split(':');
+        if (parts.length == 2) {
+          _horaConsulta = TimeOfDay(
+            hour: int.parse(parts[0]),
+            minute: int.parse(parts[1]),
+          );
+        }
+      } catch (_) {}
+    }
   }
 
   @override
   void dispose() {
-    _horarioController.dispose();
     _localController.dispose();
     _profissionalController.dispose();
     _acompanhanteController.dispose();
     _motivoController.dispose();
     super.dispose();
+  }
+
+  Future<void> _selecionarData() async {
+    final now = DateTime.now();
+    final initial = _dataConsulta ?? now;
+    final first = initial.isBefore(now.subtract(const Duration(days: 365)))
+        ? initial.subtract(const Duration(days: 30))
+        : now.subtract(const Duration(days: 365));
+    final last = now.add(const Duration(days: 365 * 5));
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
+      builder: (context, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: Color(0xFFC18AD1),
+            onPrimary: Colors.white,
+            surface: Colors.white,
+            onSurface: Colors.black87,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (date != null) setState(() => _dataConsulta = date);
+  }
+
+  Future<void> _selecionarHora() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _horaConsulta ?? TimeOfDay.now(),
+      builder: (context, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: Color(0xFFC18AD1)),
+        ),
+        child: child!,
+      ),
+    );
+    if (time != null) setState(() => _horaConsulta = time);
+  }
+
+  String get _dataFormatada {
+    if (_dataConsulta == null) return 'Selecionar data';
+    final d = _dataConsulta!;
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  String get _horaFormatada {
+    if (_horaConsulta == null) return 'Selecionar horário';
+    return '${_horaConsulta!.hour.toString().padLeft(2, '0')}:${_horaConsulta!.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -58,7 +137,7 @@ class _AddConsultaViewState extends State<AddConsultaView> {
                   ),
                   Expanded(
                     child: Text(
-                      isEditing ? 'EDITAR LEMBRETE' : 'ADICIONAR NOVO LEMBRETE',
+                      isEditing ? 'EDITAR CONSULTA' : 'ADICIONAR CONSULTA',
                       style: const TextStyle(
                         fontSize: 16,
                         color: Colors.black,
@@ -85,20 +164,28 @@ class _AddConsultaViewState extends State<AddConsultaView> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 15),
-              const Text(
-                'DIGITE DE ACORDO COM A CONSULTA',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'serif',
-                ),
-                textAlign: TextAlign.center,
-              ),
               const SizedBox(height: 30),
 
-              _buildTextField('HORÁRIO:', _horarioController),
+              // ── Seletor de Data ────────────────────────────────────────────
+              _buildSeletorCard(
+                icon: Icons.calendar_today_outlined,
+                label: 'DATA DA CONSULTA:',
+                valor: _dataFormatada,
+                onTap: _selecionarData,
+                selecionado: _dataConsulta != null,
+              ),
+              const SizedBox(height: 14),
+
+              // ── Seletor de Hora ────────────────────────────────────────────
+              _buildSeletorCard(
+                icon: Icons.access_time_outlined,
+                label: 'HORÁRIO DA CONSULTA:',
+                valor: _horaFormatada,
+                onTap: _selecionarHora,
+                selecionado: _horaConsulta != null,
+              ),
+              const SizedBox(height: 14),
+
               _buildTextField('LOCAL:', _localController),
               _buildTextField('NOME DO PROFISSIONAL:', _profissionalController),
               _buildTextField('ACOMPANHANTE:', _acompanhanteController),
@@ -112,15 +199,12 @@ class _AddConsultaViewState extends State<AddConsultaView> {
                 child: ElevatedButton(
                   onPressed: () {
                     final profissional = _profissionalController.text.trim();
-                    final horario = _horarioController.text.trim();
                     final local = _localController.text.trim();
-                    final acompanhante = _acompanhanteController.text.trim();
-                    final motivo = _motivoController.text.trim();
 
-                    if (profissional.isEmpty && motivo.isEmpty && local.isEmpty && horario.isEmpty) {
+                    if (profissional.isEmpty && local.isEmpty && _dataConsulta == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Por favor, preencha as informações da consulta.'),
+                          content: Text('Por favor, preencha ao menos a data e o profissional.'),
                         ),
                       );
                       return;
@@ -130,15 +214,24 @@ class _AddConsultaViewState extends State<AddConsultaView> {
                         ? widget.reminderToEdit!.id
                         : DateTime.now().millisecondsSinceEpoch.toString();
 
+                    // Monta lista de horários para agendamento de notificação
+                    final List<String> horariosAgendamento = [];
+                    if (_horaConsulta != null) {
+                      horariosAgendamento.add(
+                        '${_horaConsulta!.hour.toString().padLeft(2, '0')}:${_horaConsulta!.minute.toString().padLeft(2, '0')}',
+                      );
+                    }
+
                     final reminder = ReminderModel(
                       id: id,
                       type: ReminderType.consulta,
                       profissionalConsulta: profissional,
-                      horarioConsulta: horario,
+                      horarioConsulta: _horaConsulta != null ? _horaFormatada : '',
+                      dataConsulta: _dataConsulta != null ? _dataFormatada : '',
                       localConsulta: local,
-                      acompanhanteConsulta: acompanhante,
-                      motivoConsulta: motivo,
-                      horarios: horario.isNotEmpty ? [horario] : const [],
+                      acompanhanteConsulta: _acompanhanteController.text.trim(),
+                      motivoConsulta: _motivoController.text.trim(),
+                      horarios: horariosAgendamento,
                     );
 
                     if (isEditing) {
@@ -150,9 +243,7 @@ class _AddConsultaViewState extends State<AddConsultaView> {
                     Navigator.pop(context, reminder);
                   },
                   style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text(
                     isEditing ? 'Atualizar Consulta' : 'Salvar Consulta',
@@ -166,6 +257,62 @@ class _AddConsultaViewState extends State<AddConsultaView> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeletorCard({
+    required IconData icon,
+    required String label,
+    required String valor,
+    required VoidCallback onTap,
+    required bool selecionado,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selecionado ? const Color(0xFF9C72AD) : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF9C72AD), size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFF9C72AD),
+                      fontFamily: 'serif',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    valor,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: selecionado ? Colors.black87 : Colors.black38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.edit_outlined, color: Color(0xFF9C72AD), size: 20),
+          ],
         ),
       ),
     );

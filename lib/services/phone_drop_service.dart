@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+
+import 'emergency_sms_service.dart';
+import 'alert_sync_service.dart';
+import 'user_session_service.dart';
+import '../models/user_profile.dart';
 
 /// Serviço que monitora o acelerômetro e detecta queda do celular.
-/// Quando detectada, envia mensagem via WhatsApp para o cuidador.
+/// Quando detectada, envia alerta direto via SMS para o cuidador.
 class PhoneDropService {
   PhoneDropService._();
   static final PhoneDropService instance = PhoneDropService._();
@@ -38,8 +42,15 @@ class PhoneDropService {
   // ── Controle de estado ────────────────────────────────────────────────────
   bool get isRunning => _isRunning;
 
-  /// Inicia o monitoramento do acelerômetro.
+  /// Inicia o monitoramento do acelerômetro SOMENTE se o perfil logado for Idoso.
   Future<void> start() async {
+    final session = UserSessionService.instance;
+    // Bloqueia execução para qualquer perfil que não seja Idoso
+    if (!session.isAuthenticated || session.currentUser.role != UserRole.idoso) {
+      await stop();
+      return;
+    }
+
     if (_isRunning) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -50,6 +61,7 @@ class PhoneDropService {
     _subscription = accelerometerEventStream(
       samplingPeriod: SensorInterval.normalInterval,
     ).listen(_onAccelerometerEvent);
+    debugPrint('[PhoneDropService] Monitoramento de queda ATIVADO para perfil Idoso.');
   }
 
   /// Para o monitoramento.
@@ -61,6 +73,12 @@ class PhoneDropService {
 
   /// Alterna entre ligar/desligar e persiste a preferência.
   Future<bool> toggle() async {
+    final session = UserSessionService.instance;
+    if (!session.isAuthenticated || session.currentUser.role != UserRole.idoso) {
+      await stop();
+      return false;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     if (_isRunning) {
       await stop();
@@ -81,25 +99,61 @@ class PhoneDropService {
     await prefs.setString(_keyPhone, digits);
   }
 
-  /// Retorna o número salvo do cuidador (ou string vazia).
+  /// Retorna o número salvo do cuidador (ou telefone do cuidador vinculado na sessão).
   Future<String> getCuidadorPhone() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyPhone) ?? '';
+    final saved = prefs.getString(_keyPhone) ?? '';
+    if (saved.isNotEmpty) return saved;
+
+    // Fallback inteligente para os dados do cuidador vinculado
+    final session = UserSessionService.instance;
+    final partnerPhone = session.partnerUser?.phone;
+    if (partnerPhone != null && partnerPhone.isNotEmpty) {
+      final clean = partnerPhone.replaceAll(RegExp(r'\D'), '');
+      if (clean.isNotEmpty) return clean;
+    }
+    final caregiverPhone = session.currentUser.caregiverPhone;
+    if (caregiverPhone != null && caregiverPhone.isNotEmpty) {
+      final clean = caregiverPhone.replaceAll(RegExp(r'\D'), '');
+      if (clean.isNotEmpty) return clean;
+    }
+    return '';
   }
 
   /// Verifica se a detecção de queda está habilitada.
   Future<bool> isEnabled() async {
+    final session = UserSessionService.instance;
+    if (!session.isAuthenticated || session.currentUser.role != UserRole.idoso) {
+      return false;
+    }
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_keyEnabled) ?? true;
   }
 
   // ── Lógica principal ──────────────────────────────────────────────────────
   void _onAccelerometerEvent(AccelerometerEvent event) {
+    if (UserSessionService.instance.currentUser.role != UserRole.idoso) {
+      stop();
+      return;
+    }
+
     final magnitude = sqrt(
       event.x * event.x + event.y * event.y + event.z * event.z,
     );
 
     final now = DateTime.now();
+
+    // 0) Detecção de impacto brusco direto (ex: queda rápida sem fase longa de gravidade zero)
+    if (magnitude > 32.0) {
+      if (_lastAlertTime == null ||
+          now.difference(_lastAlertTime!).inMilliseconds > alertCooldownMs) {
+        _lastAlertTime = now;
+        _triggerDropAlert();
+      }
+      _freeFallDetected = false;
+      _freeFallTime = null;
+      return;
+    }
 
     // 1) Detecta queda livre (magnitude muito baixa → celular em queda)
     if (magnitude < freeFallThreshold && !_freeFallDetected) {
@@ -135,35 +189,35 @@ class PhoneDropService {
   }
 
   void _triggerDropAlert() async {
-    // Notifica a UI (ex.: exibir diálogo)
+    final session = UserSessionService.instance;
+    if (!session.isAuthenticated || session.currentUser.role != UserRole.idoso) {
+      return;
+    }
+
+    // Notifica a UI (se o app estiver aberto em primeiro plano)
     onDropDetected?.call();
-    // Envia WhatsApp para o cuidador
-    await _sendWhatsAppAlert();
-  }
 
-  /// Abre o WhatsApp com uma mensagem de alerta para o cuidador.
-  Future<void> _sendWhatsAppAlert() async {
     final phone = await getCuidadorPhone();
-    if (phone.isEmpty) return;
 
-    // Garante código do país (Brasil = 55)
-    final fullPhone = phone.startsWith('55') ? phone : '55$phone';
-
-    final mensagem = Uri.encodeComponent(
-      '⚠️ ALERTA PROTEGER+\n\n'
-      'O celular do usuário foi detectado caindo no chão!\n\n'
-      'Por favor, verifique se está tudo bem. 🙏',
+    // 1. Registra alerta em tempo real no servidor para o painel do cuidador
+    AlertSyncService.instance.registrarAlerta(
+      tipo: 'queda',
+      detalhes: 'Queda do celular detectada pelo acelerômetro em movimento brusco!',
+      telefoneDestino: phone,
     );
 
-    final uri = Uri.parse('https://wa.me/$fullPhone?text=$mensagem');
+    if (phone.isEmpty) return;
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    // 2. Envio direto de SMS nativo (funciona com app aberto, em 2º plano ou tela bloqueada)
+    // Sem abrir nenhum app e sem exigir que o idoso aperte em enviar!
+    await EmergencySmsService.instance.sendDirectSms(
+      rawPhone: phone,
+      message: 'ALERTA DE QUEDA - PROTEGER+: O celular do usuário detectou uma queda no chão! Verifique a situação imediatamente.',
+    );
   }
 
   /// Envia um alerta manual (botão de teste ou emergência).
   Future<void> sendManualAlert() async {
-    await _sendWhatsAppAlert();
+    _triggerDropAlert();
   }
 }

@@ -1,172 +1,150 @@
 import 'package:flutter/material.dart';
+import '../models/user_profile.dart';
+import '../services/user_session_service.dart';
+import 'direct_chat_view.dart';
 
+/// Tela de Chat principal do Proteger+.
+/// Respeita a regra de negócio exclusiva de vínculo entre Idoso e Cuidador por código.
+/// Todos os contatos e conversas fictícias foram removidos.
 class ChatView extends StatelessWidget {
   const ChatView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'Chat de Conversas',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-          ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
-            onPressed: () => Navigator.pop(context),
-          ),
-          bottom: const TabBar(
-            indicatorColor: Colors.black,
-            labelColor: Colors.black,
-            unselectedLabelColor: Colors.black54,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold),
-            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.normal),
-            tabs: [
-              Tab(text: 'CUIDADORES'),
-              Tab(text: 'USUÁRIOS'),
-              Tab(text: 'AMIGOS'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
-          children: [_CuidadoresTab(), _OutrosUsuariosTab(), _AmigosTab()],
-        ),
-      ),
-    );
-  }
-}
+    return AnimatedBuilder(
+      animation: UserSessionService.instance,
+      builder: (context, _) {
+        final session = UserSessionService.instance;
 
-class _CuidadoresTab extends StatelessWidget {
-  const _CuidadoresTab();
+        // Se houver vínculo ativo, direciona diretamente para a conversa com o cuidador
+        if (session.hasActiveLink) {
+          return const DirectChatView();
+        }
 
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildChatListItem(
-          name: 'Maria (Cuidadora)',
-          message: 'Olá! Como você está se sentindo hoje?',
-          time: '14:30',
-          avatarColor: Colors.blueAccent,
-        ),
-        _buildChatListItem(
-          name: 'João Silva',
-          message: 'Lembre-se de tomar a água!',
-          time: 'Ontem',
-          avatarColor: Colors.greenAccent,
-        ),
-      ],
-    );
-  }
-}
-
-class _OutrosUsuariosTab extends StatelessWidget {
-  const _OutrosUsuariosTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> usuarios = [
-      {'nome': 'José Oliveira', 'idade': 72},
-      {'nome': 'Ana Souza', 'idade': 68},
-      {'nome': 'Roberto Santos', 'idade': 75},
-      {'nome': 'Lúcia Ferreira', 'idade': 70},
-    ];
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: usuarios.length,
-      itemBuilder: (context, index) {
-        final user = usuarios[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
-            ),
-            leading: CircleAvatar(
-              child: Text(
-                user['nome'][0],
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
-            title: Text(
-              user['nome'],
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            subtitle: Text(
-              '${user['idade']} anos',
-              style: const TextStyle(fontSize: 14),
-            ),
-            trailing: ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Solicitação enviada para ${user['nome']}!'),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: const Text(
-                'Solicitar Amizade',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          ),
-        );
+        // Estado vazio contextual quando não há vínculo
+        return _buildUnlinkedView(context, session);
       },
     );
   }
-}
 
-class _AmigosTab extends StatelessWidget {
-  const _AmigosTab();
+  Widget _buildUnlinkedView(BuildContext context, UserSessionService session) {
+    final isSenior = session.currentUser.role == UserRole.idoso;
 
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Você ainda não possui amigos adicionados.',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontStyle: FontStyle.italic,
+    final title = isSenior
+        ? 'Nenhum Cuidador Vinculado'
+        : 'Nenhum Idoso Vinculado';
+
+    final explanation = isSenior
+        ? 'Você ainda não está conectado a um cuidador. Vincule sua conta para começar a conversar com segurança.'
+        : 'Você ainda não está conectado a um idoso. Vincule sua conta para começar a conversar e acompanhar seu paciente.';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Chat de Conversas',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Ícone ilustrativo com a identidade visual do app
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9C72AD).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 52,
+                    color: Color(0xFF9C72AD),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Título
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Mensagem contextual
+                Text(
+                  explanation,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: Colors.black54,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // Card explicativo sobre o vínculo por código
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF9C72AD).withValues(alpha: 0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.security, color: Color(0xFF9C72AD), size: 22),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Conexão Privada e Segura',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey.shade800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        isSenior
+                            ? 'O chat do Proteger+ funciona exclusivamente entre você e seu cuidador através do código de vinculação gerado no cadastro.'
+                            : 'O chat do Proteger+ exige a confirmação do código de vinculação do idoso para liberar a troca de mensagens.',
+                        style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
-}
-
-Widget _buildChatListItem({
-  required String name,
-  required String message,
-  required String time,
-  required Color avatarColor,
-}) {
-  return Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-    child: ListTile(
-      leading: CircleAvatar(
-        backgroundColor: avatarColor,
-        child: const Icon(Icons.person, color: Colors.white),
-      ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text(message, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Text(
-        time,
-        style: const TextStyle(color: Colors.grey, fontSize: 12),
-      ),
-    ),
-  );
 }

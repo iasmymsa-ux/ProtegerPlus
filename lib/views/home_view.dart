@@ -6,10 +6,12 @@ import 'cuidados_saude_view.dart';
 import 'chat_view.dart';
 import 'profile_view.dart';
 import 'atendimento_psicologico_view.dart';
-import 'phone_drop_view.dart';
-import 'voice_alert_view.dart';
+import 'initial_view.dart';
 import '../app_theme_manager.dart';
 import '../services/emergency_service.dart';
+import '../services/emergency_sms_service.dart';
+import '../services/user_session_service.dart';
+import '../models/user_profile.dart';
 
 // HomeView agora é StatefulWidget para controlar o lock de emergência.
 // O design é 100% preservado — apenas a lógica do botão foi substituída.
@@ -24,6 +26,15 @@ class _HomeViewState extends State<HomeView> {
   // Protege contra múltiplos acionamentos simultâneos sem criar confirmação.
   // true = emergência em andamento, novos toques são ignorados silenciosamente.
   bool _emergencyFiring = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Solicita a permissão de SMS para envio silencioso e direto de emergência
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      EmergencySmsService.instance.requestPermission();
+    });
+  }
 
   Future<void> _handleEmergency() async {
     // Guard: ignora toques enquanto o fluxo está em andamento.
@@ -50,70 +61,146 @@ class _HomeViewState extends State<HomeView> {
     final samuOk = result.samu.success;
     final cuidadorOk = result.cuidador.success;
 
-    // Monta mensagem honesta baseada no que de fato aconteceu.
-    final List<String> linhas = [];
+    final String mensagem = samuOk && cuidadorOk
+        ? '🚨 Emergência acionada! SMS enviado ao cuidador e ligando para o SAMU 192...'
+        : (samuOk
+            ? '🚨 Ligando para o SAMU 192... (${result.cuidador.detail})'
+            : '⚠️ SAMU: ${result.samu.detail} | ${result.cuidador.detail}');
 
-    if (samuOk) {
-      linhas.add('📞 ${result.samu.detail}');
-    } else {
-      linhas.add('❌ SAMU: ${result.samu.detail}');
-    }
-
-    if (cuidadorOk) {
-      linhas.add('✅ ${result.cuidador.detail}');
-    } else {
-      linhas.add('❌ Cuidador: ${result.cuidador.detail}');
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.red.shade50,
-        title: Row(
-          children: [
-            Icon(
-              (samuOk || cuidadorOk)
-                  ? Icons.warning_amber_rounded
-                  : Icons.error_outline,
-              color: Colors.red,
-              size: 30,
-            ),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Emergência acionada',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          mensagem,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: linhas
-              .map(
-                (l) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(l, style: const TextStyle(fontSize: 14, height: 1.4)),
-                ),
-              )
-              .toList(),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sair da conta'),
+        content: const Text('Deseja realmente sair da conta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sair', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      await UserSessionService.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const InitialView()),
+        (route) => false,
+      );
+    }
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'Excluir conta permanentemente',
+          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Atenção: esta ação é irreversível!\n\n'
+          'Todos os seus dados cadastrais, lembretes, conversas e vínculos com cuidadores serão excluídos definitivamente.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'OK',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Excluir Definitivamente', style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      final res = await UserSessionService.instance.deleteAccount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['mensagem'] ?? 'Conta excluída com sucesso.'),
+          backgroundColor: Colors.red.shade800,
+        ),
+      );
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const InitialView()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _showAccountOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Opções da Conta',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.black87),
+                title: const Text('Sair da conta (Logout)'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleLogout();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text(
+                  'Excluir conta permanentemente',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text('Apaga todos os dados e vínculos no servidor'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleDeleteAccount();
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -131,7 +218,7 @@ class _HomeViewState extends State<HomeView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // ── Header (Profile + Premium Badge) ── design preservado ──
+                // ── Header (Profile + Configurações + Premium Badge + Sair/Excluir) ──────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,10 +256,12 @@ class _HomeViewState extends State<HomeView> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
-                            'Perfil',
-                            style: TextStyle(
-                              fontSize: 18,
+                          Text(
+                            UserSessionService.instance.currentUser.name.isNotEmpty && UserSessionService.instance.currentUser.name != 'Usuário'
+                                ? UserSessionService.instance.currentUser.name.split(' ').first
+                                : 'Perfil',
+                            style: const TextStyle(
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: Colors.black,
                             ),
@@ -180,29 +269,41 @@ class _HomeViewState extends State<HomeView> {
                         ],
                       ),
                     ),
-                    Column(
+
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFFFFD700).withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.workspace_premium,
-                            size: 40,
-                            color: Color(0xFFDAA520),
-                          ),
+                        Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFFFFD700).withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.workspace_premium,
+                                size: 40,
+                                color: Color(0xFFDAA520),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Perfil Premium',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppThemeManager.instance.borderColor,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Perfil Premium',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppThemeManager.instance.borderColor,
-                          ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.logout, size: 28, color: Colors.black87),
+                          tooltip: 'Sair ou Excluir Conta',
+                          onPressed: _showAccountOptions,
                         ),
                       ],
                     ),
@@ -292,6 +393,7 @@ class _HomeViewState extends State<HomeView> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
+
                             builder: (_) => const CuidadosSaudeView()),
                       ),
                     ),
@@ -299,10 +401,13 @@ class _HomeViewState extends State<HomeView> {
                       icon: Icons.forum_outlined,
                       text: 'CHAT DE\nCONVERSAS',
                       iconColor: AppThemeManager.instance.borderColor,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ChatView()),
-                      ),
+                      onTap: () {
+                        UserSessionService.instance.setRole(UserRole.idoso);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatView()),
+                        );
+                      },
                     ),
                     _buildFeatureButton(
                       icon: Icons.event_note_outlined,
@@ -343,26 +448,6 @@ class _HomeViewState extends State<HomeView> {
                         MaterialPageRoute(
                             builder: (_) =>
                                 const AtendimentoPsicologicoView()),
-                      ),
-                    ),
-                    _buildFeatureButton(
-                      icon: Icons.phone_android,
-                      text: 'DETECÇÃO\nDE QUEDA',
-                      iconColor: AppThemeManager.instance.borderColor,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const PhoneDropView()),
-                      ),
-                    ),
-                    _buildFeatureButton(
-                      icon: Icons.mic,
-                      text: 'ALERTA\nPOR VOZ',
-                      iconColor: AppThemeManager.instance.borderColor,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const VoiceAlertView()),
                       ),
                     ),
                   ],

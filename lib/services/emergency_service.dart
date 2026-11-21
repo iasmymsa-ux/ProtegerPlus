@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
-import 'package:flutter/services.dart';
 import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'emergency_sms_service.dart';
+import 'user_session_service.dart';
+import 'alert_sync_service.dart';
 
 /// Resultado de uma ação individual da emergência.
 class EmergencyActionResult {
@@ -40,9 +42,6 @@ class EmergencyService {
   EmergencyService._();
   static final EmergencyService instance = EmergencyService._();
 
-  // MethodChannel registrado em MainActivity.kt
-  static const _channel = MethodChannel('com.protegerplus/emergency');
-
   // Mesma chave usada por PhoneDropService e VoiceAlertService
   static const String _keyCuidadorPhone = 'cuidador_whatsapp';
 
@@ -53,13 +52,21 @@ class EmergencyService {
 
   // ── Ponto de entrada ──────────────────────────────────────────────────────
 
-  /// Dispara ligação para o SAMU e alerta ao cuidador em paralelo.
+  /// Dispara envio direto de SMS para o cuidador e inicia ligação para o SAMU 192
   Future<EmergencyResult> trigger() async {
-    final results = await Future.wait([
-      _acionarSamu(),
-      _alertarCuidador(),
-    ]);
-    return EmergencyResult(samu: results[0], cuidador: results[1]);
+    // 0. Registra o alerta de pânico em tempo real no servidor para o painel do cuidador
+    AlertSyncService.instance.registrarAlerta(
+      tipo: 'botao_panico',
+      detalhes: 'Botão de emergência / SOS acionado pelo usuário no aplicativo.',
+    );
+
+    // 1. Envia SMS silencioso para o cuidador via SmsManager nativo
+    final cuidadorResult = await _alertarCuidador();
+
+    // 2. Imediatamente efetua a chamada telefônica direta para o SAMU 192
+    final samuResult = await _acionarSamu();
+
+    return EmergencyResult(samu: samuResult, cuidador: cuidadorResult);
   }
 
   // ── SAMU 192 ──────────────────────────────────────────────────────────────
@@ -135,7 +142,7 @@ class EmergencyService {
         label: 'Cuidador',
         success: false,
         detail: 'Nenhum número de cuidador cadastrado. '
-            'Acesse "Detecção de Queda" e cadastre o número.',
+            'Cadastre o telefone do cuidador nas configurações ou no perfil.',
       );
     }
 
@@ -146,34 +153,22 @@ class EmergencyService {
     }
 
     if (Platform.isAndroid) {
-      // Tenta enviar SMS diretamente via SmsManager nativo (MethodChannel)
-      try {
-        final result = await _channel.invokeMethod<String>('sendSmsDirectly', {
-          'number': numero,
-          'message': _mensagemEmergencia,
-        });
+      // Tenta enviar SMS diretamente via SmsManager nativo
+      final sent = await EmergencySmsService.instance.sendDirectSms(
+        rawPhone: phone,
+        message: _mensagemEmergencia,
+      );
 
-        if (result == 'SMS_SENT') {
-          return EmergencyActionResult(
-            label: 'Cuidador (SMS)',
-            success: true,
-            detail:
-                'SMS de emergência enviado automaticamente para $numero.',
-          );
-        }
-      } on PlatformException catch (e) {
-        // Permissão negada em runtime → fallback para abrir app de SMS
-        if (e.code == 'PERMISSION_DENIED') {
-          return await _abrirAppSms(numero,
-              prefixo: 'Permissão de SMS negada. ');
-        }
-        // Outro erro do SmsManager → fallback
-        return await _abrirAppSms(numero,
-            prefixo: 'Erro no SMS automático. ');
-      } catch (_) {
-        return await _abrirAppSms(numero,
-            prefixo: 'Erro inesperado no SMS. ');
+      if (sent) {
+        return EmergencyActionResult(
+          label: 'Cuidador (SMS)',
+          success: true,
+          detail: 'SMS de emergência enviado automaticamente para $numero.',
+        );
       }
+
+      // Se falhou (ex: sem sinal de operadora ou sem chip), fallback para app de SMS
+      return await _abrirAppSms(numero, prefixo: 'Falha no SMS direto. ');
     }
 
     // iOS: Apple não permite SMS automático
@@ -240,6 +235,27 @@ class EmergencyService {
 
   Future<String> _getCuidadorPhone() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyCuidadorPhone) ?? '';
+    final prefPhone = prefs.getString(_keyCuidadorPhone);
+    if (prefPhone != null && prefPhone.trim().isNotEmpty) {
+      return prefPhone.trim();
+    }
+    final user = UserSessionService.instance.currentUser;
+    // 1. Verifica telefone do cuidador informado no cadastro do idoso
+    if (user.caregiverPhone != null && user.caregiverPhone!.trim().isNotEmpty) {
+      return user.caregiverPhone!.trim();
+    }
+    // 2. Verifica telefone de emergência cadastrado na conta do usuário
+    if (user.emergencyPhone != null && user.emergencyPhone!.trim().isNotEmpty) {
+      return user.emergencyPhone!.trim();
+    }
+    // 3. Verifica telefone do par (cuidador / idoso vinculado)
+    final partner = UserSessionService.instance.partnerUser;
+    if (partner != null && partner.phone != null && partner.phone!.trim().isNotEmpty) {
+      return partner.phone!.trim();
+    }
+    if (partner != null && partner.emergencyPhone != null && partner.emergencyPhone!.trim().isNotEmpty) {
+      return partner.emergencyPhone!.trim();
+    }
+    return '';
   }
 }

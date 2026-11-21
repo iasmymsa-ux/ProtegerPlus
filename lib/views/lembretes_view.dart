@@ -238,7 +238,21 @@ class _LembretesViewState extends State<LembretesView> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(width: 48),
+                  IconButton(
+                    icon: const Icon(Icons.volume_up_rounded, size: 28, color: Color(0xFF9C72AD)),
+                    tooltip: 'Testar Som do Alarme',
+                    onPressed: () async {
+                      await ReminderService().testAlarmNow();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Disparando alarme sonoro! Certifique-se de que o volume de alarme está ativo.'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 30),

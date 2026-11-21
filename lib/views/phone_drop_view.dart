@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/phone_drop_service.dart';
+import '../services/emergency_sms_service.dart';
 import '../app_theme_manager.dart';
 
 /// Tela de configuração e monitoramento de queda do celular.
@@ -69,6 +70,7 @@ class _PhoneDropViewState extends State<PhoneDropView>
   Future<void> _savePhone() async {
     setState(() => _isSaving = true);
     await PhoneDropService.instance.saveCuidadorPhone(_phoneController.text);
+    await EmergencySmsService.instance.requestPermission();
     await Future.delayed(const Duration(milliseconds: 600));
     if (mounted) {
       setState(() => _isSaving = false);
@@ -78,7 +80,7 @@ class _PhoneDropViewState extends State<PhoneDropView>
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 8),
-              Text('Número do cuidador salvo com sucesso!'),
+              Text('Número salvo com sucesso!'),
             ],
           ),
           backgroundColor: Colors.green.shade700,
@@ -91,6 +93,9 @@ class _PhoneDropViewState extends State<PhoneDropView>
 
   Future<void> _toggleMonitoring() async {
     final newState = await PhoneDropService.instance.toggle();
+    if (newState) {
+      await EmergencySmsService.instance.requestPermission();
+    }
     if (mounted) setState(() => _isEnabled = newState);
   }
 
@@ -108,7 +113,32 @@ class _PhoneDropViewState extends State<PhoneDropView>
       return;
     }
     await PhoneDropService.instance.saveCuidadorPhone(phone);
-    await PhoneDropService.instance.sendManualAlert();
+    final sent = await EmergencySmsService.instance.sendDirectSms(
+      rawPhone: phone,
+      message: 'PROTEGER+ (TESTE): Alerta de queda disparado em teste diretamente por SMS.',
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(sent ? Icons.check_circle : Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  sent
+                      ? 'SMS de alerta enviado diretamente para o cuidador!'
+                      : 'Falha ao enviar SMS. Conceda a permissão de SMS no aparelho.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: sent ? Colors.green.shade700 : Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   void _showDropDialog() {
@@ -127,7 +157,7 @@ class _PhoneDropViewState extends State<PhoneDropView>
         ),
         content: const Text(
           'O celular parece ter caído no chão.\n\n'
-          'O cuidador foi notificado via WhatsApp automaticamente.',
+          'O cuidador foi alertado por SMS diretamente.',
           style: TextStyle(fontSize: 15),
         ),
         actions: [
@@ -238,7 +268,7 @@ class _PhoneDropViewState extends State<PhoneDropView>
 
               Text(
                 _isEnabled
-                    ? 'O app detecta automaticamente se o celular\ncair e avisa o cuidador pelo WhatsApp.'
+                    ? 'O app detecta automaticamente se o celular\ncair e avisa o cuidador por SMS diretamente.'
                     : 'Ative o monitoramento para receber alertas\nautomáticos de queda.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade700),

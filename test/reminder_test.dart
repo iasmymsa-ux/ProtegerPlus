@@ -1,12 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz;
 import 'package:proteger_plus/models/reminder_model.dart';
 import 'package:proteger_plus/services/reminder_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
+  SharedPreferences.setMockInitialValues({});
+
   group('ReminderService & ReminderModel Tests', () {
     late ReminderService reminderService;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       reminderService = ReminderService();
       // Clear all existing reminders before each test
       final currentList = List<ReminderModel>.from(reminderService.reminders);

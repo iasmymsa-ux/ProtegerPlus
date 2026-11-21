@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/voice_alert_service.dart';
+import '../services/emergency_sms_service.dart';
+import '../services/background_protection_service.dart';
 import '../app_theme_manager.dart';
 
 /// Tela de configuração do alerta por voz.
 /// Permite:
 ///   - Ligar/desligar o monitoramento de voz
+///   - Ver em tempo real as palavras que o microfone está ouvindo (diagnóstico)
+///   - Ativar permissão de segundo plano e tela bloqueada (otimização de bateria)
 ///   - Ver/adicionar/remover palavras-chave de emergência
 ///   - Testar o envio de alerta manualmente
-///   - Ver o texto reconhecido em tempo real
 class VoiceAlertView extends StatefulWidget {
   const VoiceAlertView({super.key});
 
@@ -22,7 +26,11 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
   List<String> _keywords = [];
   final _newKeywordController = TextEditingController();
   String _lastDetectedWord = '';
+  String _lastHeardText = '';
   String _alertMessage = '';
+  bool _hasSmsPermission = false;
+  bool _isBatteryOptIgnored = false;
+  String _cuidadorPhone = '';
 
   late AnimationController _micController;
   late Animation<double> _micScale;
@@ -46,9 +54,17 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
       if (mounted) {
         setState(() {
           _lastDetectedWord = keyword;
-          _alertMessage = '🚨 Palavra detectada: "$keyword" — Alerta enviado!';
+          _alertMessage = '🚨 Palavra detectada: "$keyword" — Alerta enviado ao cuidador!';
         });
         _showAlertDialog(keyword);
+      }
+    };
+
+    VoiceAlertService.instance.onSpeechHeard = (text) {
+      if (mounted) {
+        setState(() {
+          _lastHeardText = text;
+        });
       }
     };
   }
@@ -56,10 +72,19 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
   Future<void> _loadState() async {
     final enabled = await VoiceAlertService.instance.isEnabled();
     final keywords = await VoiceAlertService.instance.getKeywords();
+    final smsPerm = await EmergencySmsService.instance.hasPermission();
+    final batteryIgnored = await BackgroundProtectionService.instance.isBatteryOptimizationIgnored();
+    final prefs = await SharedPreferences.getInstance();
+    final phone = prefs.getString('cuidador_whatsapp') ?? '';
+
     if (mounted) {
       setState(() {
         _isEnabled = VoiceAlertService.instance.isRunning || enabled;
         _keywords = keywords;
+        _hasSmsPermission = smsPerm;
+        _isBatteryOptIgnored = batteryIgnored;
+        _cuidadorPhone = phone;
+        _lastHeardText = VoiceAlertService.instance.lastHeardText;
         _isLoading = false;
       });
     }
@@ -68,12 +93,68 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
   Future<void> _toggleMonitoring() async {
     setState(() => _isLoading = true);
     final newState = await VoiceAlertService.instance.toggle();
+
+    if (newState) {
+      // Proativamente solicita as permissões necessárias para segundo plano e SMS
+      final smsOk = await EmergencySmsService.instance.requestPermission();
+      final batteryOk = await BackgroundProtectionService.instance.requestIgnoreBatteryOptimizations();
+
+      if (mounted) {
+        setState(() {
+          _hasSmsPermission = smsOk;
+          _isBatteryOptIgnored = batteryOk;
+        });
+      }
+    }
+
     if (mounted) {
       setState(() {
         _isEnabled = newState;
         _isLoading = false;
         if (!newState) _alertMessage = '';
       });
+    }
+  }
+
+  Future<void> _requestBatteryOptimization() async {
+    final ok = await BackgroundProtectionService.instance.requestIgnoreBatteryOptimizations();
+    if (mounted) {
+      setState(() {
+        _isBatteryOptIgnored = ok;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Proteção em segundo plano e tela bloqueada autorizada!'
+                : 'Abra as configurações do app e marque "Sem restrições" na bateria.',
+          ),
+          backgroundColor: ok ? Colors.green.shade700 : Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _requestSmsPermission() async {
+    final ok = await EmergencySmsService.instance.requestPermission();
+    if (mounted) {
+      setState(() {
+        _hasSmsPermission = ok;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Permissão de SMS concedida com sucesso!'
+                : 'Permissão de SMS foi negada. Conceda nas configurações do app.',
+          ),
+          backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
     }
   }
 
@@ -130,7 +211,7 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
           ],
         ),
         content: Text(
-          'Palavra-chave detectada:\n\n"$keyword"\n\nO cuidador foi notificado via WhatsApp!',
+          'Palavra-chave detectada:\n\n"$keyword"\n\nO cuidador foi alertado por SMS diretamente!',
           style: const TextStyle(fontSize: 15),
         ),
         actions: [
@@ -148,6 +229,7 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
     _micController.dispose();
     _newKeywordController.dispose();
     VoiceAlertService.instance.onKeywordDetected = null;
+    VoiceAlertService.instance.onSpeechHeard = null;
     super.dispose();
   }
 
@@ -190,7 +272,7 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                     // ── Ícone de microfone animado ──────────────────────────
                     AnimatedBuilder(
                       animation: _micScale,
-                      builder: (_, __) => Transform.scale(
+                      builder: (context, child) => Transform.scale(
                         scale: _isEnabled ? _micScale.value : 1.0,
                         child: Container(
                           width: 130,
@@ -258,8 +340,8 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                     const SizedBox(height: 8),
                     Text(
                       _isEnabled
-                          ? 'O app detecta automaticamente palavras\nde emergência e avisa o cuidador.'
-                          : 'Ative para monitorar palavras de socorro\nem tempo real.',
+                          ? 'O microfone escuta palavras de socorro continuamente,\nmesmo fora do app ou com a tela apagada.'
+                          : 'Ative para monitorar palavras de socorro em tempo real.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
@@ -267,9 +349,165 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                       ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // ── Toggle ──────────────────────────────────────────────
+                    // ── Card de Diagnóstico em Tempo Real (O que o mic está ouvindo) ──
+                    if (_isEnabled)
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.hearing, color: Colors.blueAccent, size: 24),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Captado pelo Microfone (Tempo Real):',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Text(
+                                _lastHeardText.isNotEmpty
+                                    ? '"$_lastHeardText"'
+                                    : 'Aguardando voz... Fale "socorro" ou "ajuda" para testar.',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontStyle: _lastHeardText.isNotEmpty
+                                      ? FontStyle.normal
+                                      : FontStyle.italic,
+                                  fontWeight: _lastHeardText.isNotEmpty
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: _lastHeardText.isNotEmpty
+                                      ? Colors.blue.shade900
+                                      : Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // ── Avisos e Permissões Importantes (Segundo Plano e SMS) ──
+                    if (!_isBatteryOptIgnored || !_hasSmsPermission || _cuidadorPhone.isEmpty) ...[
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 26),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Configurações Necessárias',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Alerta Bateria (Segundo plano / tela bloqueada)
+                            if (!_isBatteryOptIgnored) ...[
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                leading: const Icon(Icons.battery_alert,
+                                    color: Colors.orange),
+                                title: const Text(
+                                  'Funcionar com a tela bloqueada',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: const Text(
+                                  'Permita o app rodar sem restrições de bateria no Android.',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                trailing: ElevatedButton(
+                                  onPressed: _requestBatteryOptimization,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    textStyle: const TextStyle(fontSize: 12),
+                                  ),
+                                  child: const Text('Permitir'),
+                                ),
+                              ),
+                              const Divider(),
+                            ],
+
+                            // Alerta SMS
+                            if (!_hasSmsPermission) ...[
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                leading: const Icon(Icons.sms_failed,
+                                    color: Colors.red),
+                                title: const Text(
+                                  'Permissão de Envio de SMS',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: const Text(
+                                  'Necessária para alertar o cuidador silenciosamente.',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                trailing: ElevatedButton(
+                                  onPressed: _requestSmsPermission,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    textStyle: const TextStyle(fontSize: 12),
+                                  ),
+                                  child: const Text('Autorizar'),
+                                ),
+                              ),
+                              const Divider(),
+                            ],
+
+                            // Alerta Cuidador
+                            if (_cuidadorPhone.isEmpty) ...[
+                              const ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                leading: Icon(Icons.person_off, color: Colors.red),
+                                title: Text(
+                                  'Nenhum cuidador cadastrado',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red),
+                                ),
+                                subtitle: Text(
+                                  'Cadastre o telefone do cuidador na tela de Perfil ou Queda.',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // ── Toggle Liga/Desliga ──────────────────────────────────
                     _buildCard(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -303,7 +541,7 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                           Switch(
                             value: _isEnabled,
                             onChanged: (_) => _toggleMonitoring(),
-                            activeColor: Colors.red,
+                            activeThumbColor: Colors.red,
                           ),
                         ],
                       ),
@@ -341,8 +579,7 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                               Expanded(
                                 child: TextField(
                                   controller: _newKeywordController,
-                                  textCapitalization:
-                                      TextCapitalization.none,
+                                  textCapitalization: TextCapitalization.none,
                                   decoration: InputDecoration(
                                     hintText: 'Ex: não consigo respirar',
                                     border: OutlineInputBorder(
@@ -356,9 +593,8 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                                     filled: true,
                                     fillColor: Colors.white,
                                     isDense: true,
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 12),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 12),
                                   ),
                                   onSubmitted: (_) => _addKeyword(),
                                 ),
@@ -489,15 +725,15 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                           ),
                           const SizedBox(height: 12),
                           _buildStep(
-                              '1', 'O microfone escuta continuamente em segundo plano'),
+                              '1', 'O microfone escuta continuamente em segundo plano (com reconhecimento fonético)'),
                           _buildStep(
-                              '2', 'O reconhecimento de voz converte áudio em texto'),
+                              '2', 'Tolera variações de fala, gritos prolongados ou erros do reconhecedor'),
                           _buildStep(
-                              '3', 'O app compara o texto com as palavras-chave'),
+                              '3', 'Funciona com tela apagada e fora do app graças à Proteção em 2º Plano'),
                           _buildStep(
-                              '4', 'Ao detectar, abre o WhatsApp com a frase exata dita'),
+                              '4', 'Ao detectar socorro, acorda a tela e envia um SMS direto com a frase dita'),
                           _buildStep(
-                              '5', 'O cuidador recebe a frase e o contexto completo!'),
+                              '5', 'O cuidador é acionado imediatamente sem que o idoso precise tocar no celular!'),
                         ],
                       ),
                     ),
@@ -509,18 +745,23 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          await VoiceAlertService.instance.sendTestAlert();
+                          final messenger = ScaffoldMessenger.of(context);
+                          final sent = await VoiceAlertService.instance.sendTestAlert();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            messenger.showSnackBar(
                               SnackBar(
-                                content: const Row(
+                                content: Row(
                                   children: [
-                                    Icon(Icons.send, color: Colors.white),
-                                    SizedBox(width: 8),
-                                    Text('Alerta de teste enviado via WhatsApp!'),
+                                    Icon(sent ? Icons.check_circle : Icons.error, color: Colors.white),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(sent
+                                          ? 'Alerta de teste enviado diretamente por SMS!'
+                                          : 'Falha ao enviar SMS. Verifique permissão de SMS e telefone do cuidador.'),
+                                    ),
                                   ],
                                 ),
-                                backgroundColor: Colors.green.shade700,
+                                backgroundColor: sent ? Colors.green.shade700 : Colors.red.shade700,
                                 behavior: SnackBarBehavior.floating,
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12)),

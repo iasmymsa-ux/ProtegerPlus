@@ -9,7 +9,6 @@ class CuidadosSaudeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -31,37 +30,49 @@ class CuidadosSaudeView extends StatelessWidget {
       ),
       body: SafeArea(
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildFeatureButton(
-                context,
-                icon: Icons.restaurant,
-                text: 'Alimentação',
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AlimentacaoView()));
-                },
-              ),
-              const SizedBox(height: 32),
-              _buildFeatureButton(
-                context,
-                icon: Icons.fitness_center,
-                text: 'Exercícios',
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const UnderDevelopmentView()));
-                },
-              ),
-              const SizedBox(height: 32),
-              _buildFeatureButton(
-                context,
-                icon: Icons.spa,
-                text: 'Bem-estar',
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const UnderDevelopmentView()));
-                },
-              ),
-            ],
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildFeatureButton(
+                  context,
+                  icon: Icons.restaurant,
+                  text: 'Alimentação',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AlimentacaoView()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                _buildFeatureButton(
+                  context,
+                  icon: Icons.fitness_center,
+                  text: 'Exercícios',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UnderDevelopmentView()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                _buildFeatureButton(
+                  context,
+                  icon: Icons.spa,
+                  text: 'Bem-estar',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UnderDevelopmentView()),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -79,8 +90,8 @@ class CuidadosSaudeView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 140,
-            height: 140,
+            width: 130,
+            height: 130,
             decoration: BoxDecoration(
               color: AppThemeManager.instance.secondaryColor,
               shape: BoxShape.circle,
@@ -94,18 +105,18 @@ class CuidadosSaudeView extends StatelessWidget {
               ],
             ),
             child: Center(
-              child: Icon(icon, size: 64, color: AppThemeManager.instance.borderColor),
+              child: Icon(icon, size: 56, color: AppThemeManager.instance.borderColor),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             text,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 22,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
-              letterSpacing: 1.1,
+              height: 1.2,
             ),
           ),
         ],

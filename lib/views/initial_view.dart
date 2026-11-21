@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../widgets/custom_logo.dart';
+import '../services/user_session_service.dart';
+import '../models/user_profile.dart';
 import 'login_view.dart';
+import 'home_view.dart';
+import 'cuidador_home_view.dart';
 import 'under_development_view.dart';
 
 class InitialView extends StatefulWidget {
@@ -14,6 +18,7 @@ class InitialView extends StatefulWidget {
 class _InitialViewState extends State<InitialView> {
   final FlutterTts _flutterTts = FlutterTts();
   int _selectedButtonIndex = 0;
+  bool _checkingSession = true;
 
   final List<Map<String, dynamic>> _buttons = [
     {'text': 'Usuário', 'profile': 'Usuario'},
@@ -24,11 +29,39 @@ class _InitialViewState extends State<InitialView> {
   void initState() {
     super.initState();
     _initTts();
+    _checkAutoLogin();
   }
 
   void _initTts() async {
     await _flutterTts.setLanguage("pt-BR");
     await _flutterTts.setPitch(1.0);
+  }
+
+  /// Verifica se o usuário já está autenticado e redireciona automaticamente
+  Future<void> _checkAutoLogin() async {
+    // Garante que o serviço já foi inicializado (main.dart já chamou init())
+    final session = UserSessionService.instance;
+
+    if (session.isAuthenticated && session.currentUser.id != 'user_local_01') {
+      // Usuário já logado — redirecionar direto para a tela correta
+      if (!mounted) return;
+      final isCaregiver = session.currentUser.role == UserRole.cuidador;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                isCaregiver ? const CuidadorHomeView() : const HomeView(),
+          ),
+        );
+      });
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _checkingSession = false);
+    }
   }
 
   void _onMicTap() async {
@@ -69,6 +102,22 @@ class _InitialViewState extends State<InitialView> {
 
   @override
   Widget build(BuildContext context) {
+    // Enquanto verifica a sessão, mostra splash simples
+    if (_checkingSession) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              CustomLogo(size: 200),
+              SizedBox(height: 32),
+              CircularProgressIndicator(),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -147,7 +196,6 @@ class _InitialViewState extends State<InitialView> {
         child: ElevatedButton(
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
-            
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(25.0),
             ),

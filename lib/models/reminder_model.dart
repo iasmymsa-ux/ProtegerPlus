@@ -9,6 +9,7 @@ class ReminderModel {
   // Specific fields for Medicamento
   final String? nomeMedicamento;
   final String? quantidadeMedicamento;
+  final String? frequenciaMedicamento; // ex: 'Diário', 'De 8 em 8 horas', etc.
   final List<String> horarios; // Format: "HH:mm"
   final String? fotoPath;
 
@@ -32,6 +33,7 @@ class ReminderModel {
     required this.type,
     this.nomeMedicamento,
     this.quantidadeMedicamento,
+    this.frequenciaMedicamento,
     this.horarios = const [],
     this.fotoPath,
     this.profissionalConsulta,
@@ -106,6 +108,7 @@ class ReminderModel {
       'type': type.name,
       'nomeMedicamento': nomeMedicamento,
       'quantidadeMedicamento': quantidadeMedicamento,
+      'frequenciaMedicamento': frequenciaMedicamento,
       'horarios': horarios,
       'fotoPath': fotoPath,
       'profissionalConsulta': profissionalConsulta,
@@ -129,6 +132,7 @@ class ReminderModel {
       ),
       nomeMedicamento: json['nomeMedicamento'] as String?,
       quantidadeMedicamento: json['quantidadeMedicamento'] as String?,
+      frequenciaMedicamento: json['frequenciaMedicamento'] as String?,
       horarios: (json['horarios'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -151,6 +155,7 @@ class ReminderModel {
     ReminderType? type,
     String? nomeMedicamento,
     String? quantidadeMedicamento,
+    String? frequenciaMedicamento,
     List<String>? horarios,
     String? fotoPath,
     String? profissionalConsulta,
@@ -168,6 +173,7 @@ class ReminderModel {
       type: type ?? this.type,
       nomeMedicamento: nomeMedicamento ?? this.nomeMedicamento,
       quantidadeMedicamento: quantidadeMedicamento ?? this.quantidadeMedicamento,
+      frequenciaMedicamento: frequenciaMedicamento ?? this.frequenciaMedicamento,
       horarios: horarios ?? this.horarios,
       fotoPath: fotoPath ?? this.fotoPath,
       profissionalConsulta: profissionalConsulta ?? this.profissionalConsulta,
