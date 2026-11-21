@@ -236,11 +236,11 @@ class _ConfiguracoesViewState extends State<ConfiguracoesView> {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         _buildColorOption(
-                          color: const Color(0xFFD49FE9),
+                          color: const Color(0xFFC9A0DC),
                           label: 'Lilás Padrão',
-                          isSelected: theme.backgroundColor == const Color(0xFFD49FE9),
+                          isSelected: theme.backgroundColor == const Color(0xFFC9A0DC),
                           onTap: () {
-                            theme.setBackgroundColor(const Color(0xFFD49FE9));
+                            theme.setBackgroundColor(const Color(0xFFC9A0DC));
                             setState(() {});
                           },
                         ),

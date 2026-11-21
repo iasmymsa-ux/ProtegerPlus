@@ -207,7 +207,7 @@ class _BingoViewState extends State<BingoView> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFD49FE9),
+      backgroundColor: const Color(0xFFC9A0DC),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
