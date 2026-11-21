@@ -212,7 +212,7 @@ class _SevenErrorsViewState extends State<SevenErrorsView> {
     final int foundCount = _errosEncontrados.where((e) => e).length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFD8A8F2),
+      backgroundColor: const Color(0xFFDABDFF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
