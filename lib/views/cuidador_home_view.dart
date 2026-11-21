@@ -647,8 +647,8 @@ class _CuidadorHomeViewState extends State<CuidadorHomeView> {
                       ),
                     ),
                     _buildFeatureButton(
-                      icon: Icons.record_voice_over_outlined,
-                      text: 'ALERTA\nDE VOZ',
+                      icon: Icons.crisis_alert_outlined,
+                      text: 'ALERTAS E\nQUEDAS',
                       iconColor: AppThemeManager.instance.borderColor,
                       onTap: () => Navigator.push(
                         context,

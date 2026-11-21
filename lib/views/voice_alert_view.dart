@@ -241,19 +241,25 @@ class _VoiceAlertViewState extends State<VoiceAlertView>
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: const Text(
           'Alerta por Voz',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+            fontFamily: 'serif',
+          ),
         ),
+        centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.restore),
+            icon: Icon(Icons.restore, color: AppThemeManager.instance.borderColor),
             tooltip: 'Restaurar padrão',
             onPressed: _resetToDefaults,
           ),

@@ -4,9 +4,11 @@ import 'package:image_picker/image_picker.dart';
 import '../models/medical_exam_model.dart';
 import '../services/medical_exam_service.dart';
 import '../services/user_session_service.dart';
+import '../app_theme_manager.dart';
 
 /// Tela dedicada à Saúde do Idoso, Prontuário Clínico e Arquivo de Exames com Foto.
 /// Acessada pelo Cuidador para acompanhar condições pré-existentes e laudos médicos.
+/// Design padronizado 100% com a identidade visual clara e acessível do Proteger+.
 class SaudeIdosoView extends StatefulWidget {
   const SaudeIdosoView({super.key});
 
@@ -89,7 +91,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
         .toList();
   }
 
-  /// Abre diálogo para editar doenças pré-existentes
+  /// Abre diálogo para editar doenças pré-existentes com tema claro
   Future<void> _abrirDialogEditarDoencas() async {
     final atuais = _obterDoencasIdoso();
     final Map<String, bool> selecoes = {};
@@ -100,234 +102,180 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
           d.toLowerCase().contains(item.toLowerCase()));
     }
 
-    final customController = TextEditingController();
-    // Doenças extras que não estavam na lista padrão
-    final extras = atuais
-        .where((item) => !_todasDoencas.any((d) =>
-            item.toLowerCase().contains(d.toLowerCase()) ||
-            d.toLowerCase().contains(item.toLowerCase())))
-        .toList();
-    if (extras.isNotEmpty) {
-      customController.text = extras.join(', ');
-    }
+    // Preserva doenças personalizadas que não estão na lista fixa
+    final personalizadas = atuais.where((item) => !_todasDoencas.any((d) =>
+        item.toLowerCase().contains(d.toLowerCase()) ||
+        d.toLowerCase().contains(item.toLowerCase()))).toList();
 
-    final bool? salvo = await showModalBottomSheet<bool>(
+    final novaDoencaController = TextEditingController();
+
+    final salvo = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                top: 20,
-                left: 20,
-                right: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.82,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 44,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppThemeManager.instance.borderColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.healing_rounded,
+                      color: AppThemeManager.instance.borderColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Condições de Saúde',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEA580C).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.healing_rounded,
-                            color: Color(0xFFF97316),
-                            size: 22,
-                          ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Marque as doenças e diagnósticos do idoso:',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.black54,
                         ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Condições Pré-existentes',
+                      ),
+                      const SizedBox(height: 12),
+                      ..._todasDoencas.map((d) {
+                        final marcado = selecoes[d] ?? false;
+                        return CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: AppThemeManager.instance.borderColor,
+                          title: Text(
+                            d,
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                              fontWeight: marcado ? FontWeight.bold : FontWeight.normal,
+                              color: marcado ? Colors.black87 : Colors.black54,
                             ),
                           ),
+                          value: marcado,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              selecoes[d] = val ?? false;
+                            });
+                          },
+                        );
+                      }),
+                      if (personalizadas.isNotEmpty) ...[
+                        const Divider(height: 24),
+                        const Text(
+                          'Outras condições registradas:',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Selecione as condições médicas do idoso para acompanhamento clínico:',
-                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                    ),
-                    const SizedBox(height: 14),
-                    Expanded(
-                      child: ListView(
-                        shrinkWrap: true,
-                        children: [
-                          ..._todasDoencas.map((doenca) {
-                            final selecionada = selecoes[doenca] ?? false;
-                            return InkWell(
-                              onTap: () {
-                                setModalState(() {
-                                  selecoes[doenca] = !selecionada;
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          children: personalizadas.map((p) {
+                            return Chip(
+                              backgroundColor: Colors.grey.shade100,
+                              label: Text(p, style: const TextStyle(fontSize: 12)),
+                              deleteIcon: const Icon(Icons.close, size: 14),
+                              onDeleted: () {
+                                setDialogState(() {
+                                  personalizadas.remove(p);
                                 });
                               },
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: selecionada
-                                      ? const Color(0xFFEA580C).withValues(alpha: 0.15)
-                                      : const Color(0xFF0F172A),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: selecionada
-                                        ? const Color(0xFFF97316)
-                                        : const Color(0xFF334155),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      selecionada
-                                          ? Icons.check_box_rounded
-                                          : Icons.check_box_outline_blank_rounded,
-                                      color: selecionada
-                                          ? const Color(0xFFF97316)
-                                          : const Color(0xFF64748B),
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        doenca,
-                                        style: TextStyle(
-                                          color: selecionada
-                                              ? Colors.white
-                                              : const Color(0xFFCBD5E1),
-                                          fontSize: 13.5,
-                                          fontWeight: selecionada
-                                              ? FontWeight.w600
-                                              : FontWeight.normal,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             );
-                          }),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'Outras condições ou observações adicionais:',
-                            style: TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: customController,
-                            style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                            decoration: InputDecoration(
-                              hintText: 'Ex: Alergia a Penicilina, Prótese no fêmur',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFF97316)),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
+                          }).toList(),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: novaDoencaController,
+                              style: const TextStyle(fontSize: 13),
+                              decoration: InputDecoration(
+                                hintText: 'Outra condição...',
+                                isDense: true,
+                                filled: true,
+                                fillColor: Colors.grey.shade100,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: Icon(Icons.add_circle, color: AppThemeManager.instance.borderColor),
+                            onPressed: () {
+                              final txt = novaDoencaController.text.trim();
+                              if (txt.isNotEmpty && !personalizadas.contains(txt)) {
+                                setDialogState(() {
+                                  personalizadas.add(txt);
+                                  novaDoencaController.clear();
+                                });
+                              }
+                            },
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFEA580C),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        onPressed: () {
-                          final List<String> finalDoencas = [];
-                          selecoes.forEach((k, v) {
-                            if (v) finalDoencas.add(k);
-                          });
-
-                          final extrasText = customController.text.trim();
-                          if (extrasText.isNotEmpty) {
-                            final customItems = extrasText
-                                .split(',')
-                                .map((e) => e.trim())
-                                .where((e) => e.isNotEmpty);
-                            for (final c in customItems) {
-                              if (!finalDoencas.contains(c)) {
-                                finalDoencas.add(c);
-                              }
-                            }
-                          }
-
-                          Navigator.pop(ctx, true);
-                          _salvarDoencas(finalDoencas);
-                        },
-                        child: const Text(
-                          'Salvar Condições de Saúde',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar', style: TextStyle(color: Colors.black54)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppThemeManager.instance.borderColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () async {
+                    final selecionadas = selecoes.entries
+                        .where((e) => e.value)
+                        .map((e) => e.key)
+                        .toList();
+                    selecionadas.addAll(personalizadas);
+
+                    Navigator.pop(ctx, true);
+                    await _salvarDoencas(selecionadas);
+                  },
+                  child: const Text('Salvar'),
+                ),
+              ],
             );
           },
         );
@@ -344,16 +292,24 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
     await UserSessionService.instance.updateProfile(doencasCronicas: str);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Condições de saúde atualizadas e sincronizadas com sucesso!'),
-          backgroundColor: Color(0xFF10B981),
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Condições de saúde atualizadas com sucesso!'),
+            ],
+          ),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
       setState(() {});
     }
   }
 
-  /// Abre o modal para adicionar um novo exame com foto
+  /// Abre o modal para adicionar um novo exame com foto (Tema Claro)
   Future<void> _abrirModalAdicionarExame() async {
     final tituloController = TextEditingController();
     final medicoController = TextEditingController();
@@ -374,7 +330,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E293B),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -414,465 +370,410 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.88,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 44,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.post_add_rounded,
-                            color: Color(0xFF38BDF8),
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Novo Exame ou Laudo Médico',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Expanded(
-                      child: ListView(
+                      const SizedBox(height: 16),
+                      Row(
                         children: [
-                          // Título do Exame
-                          const Text(
-                            'Nome / Tipo do Exame *',
-                            style: TextStyle(
-                              color: Color(0xFFCBD5E1),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppThemeManager.instance.borderColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.post_add_rounded,
+                              color: AppThemeManager.instance.borderColor,
+                              size: 24,
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: tituloController,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                            decoration: InputDecoration(
-                              hintText: 'Ex: Hemograma, Tomografia, ECG',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF38BDF8)),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Novo Exame ou Laudo Médico',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 14),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
 
-                          // Categoria
-                          const Text(
-                            'Categoria do Exame',
-                            style: TextStyle(
-                              color: Color(0xFFCBD5E1),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
+                      // Título do exame
+                      const Text(
+                        'Nome do Exame *',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: tituloController,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Ex: Hemograma completo, Tomografia, etc.',
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: categorias.map((cat) {
-                              final sel = cat == categoriaSelecionada;
-                              return ChoiceChip(
-                                label: Text(cat),
-                                selected: sel,
-                                selectedColor: const Color(0xFF0284C7),
-                                backgroundColor: const Color(0xFF0F172A),
-                                labelStyle: TextStyle(
-                                  color: sel ? Colors.white : const Color(0xFF94A3B8),
-                                  fontSize: 12,
-                                  fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                                ),
-                                side: BorderSide(
-                                  color: sel ? const Color(0xFF38BDF8) : const Color(0xFF334155),
-                                ),
-                                onSelected: (_) {
-                                  setModalState(() => categoriaSelecionada = cat);
-                                },
-                              );
-                            }).toList(),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
                           ),
-                          const SizedBox(height: 14),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
 
-                          // Data do Exame
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Data do Exame',
-                                      style: TextStyle(
-                                        color: Color(0xFFCBD5E1),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    InkWell(
-                                      onTap: () async {
-                                        final picked = await showDatePicker(
-                                          context: context,
-                                          initialDate: dataSelecionada,
-                                          firstDate: DateTime(2000),
-                                          lastDate: DateTime.now().add(const Duration(days: 365)),
-                                          builder: (context, child) {
-                                            return Theme(
-                                              data: ThemeData.dark().copyWith(
-                                                colorScheme: const ColorScheme.dark(
-                                                  primary: Color(0xFF38BDF8),
-                                                  surface: Color(0xFF1E293B),
-                                                ),
-                                              ),
-                                              child: child!,
-                                            );
-                                          },
-                                        );
-                                        if (picked != null) {
-                                          setModalState(() => dataSelecionada = picked);
-                                        }
-                                      },
+                      // Categoria
+                      const Text(
+                        'Categoria do Exame',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: categorias.map((cat) {
+                          final sel = cat == categoriaSelecionada;
+                          return ChoiceChip(
+                            label: Text(cat),
+                            selected: sel,
+                            selectedColor: AppThemeManager.instance.borderColor,
+                            backgroundColor: Colors.grey.shade100,
+                            labelStyle: TextStyle(
+                              color: sel ? Colors.white : Colors.black87,
+                              fontSize: 12,
+                              fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            onSelected: (_) => setModalState(() => categoriaSelecionada = cat),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Data e Médico
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Data do Exame',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                InkWell(
+                                  onTap: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: dataSelecionada,
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                    );
+                                    if (picked != null) {
+                                      setModalState(() => dataSelecionada = picked);
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
                                       borderRadius: BorderRadius.circular(10),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 11,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF0F172A),
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(color: const Color(0xFF334155)),
-                                        ),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              formatarData(dataSelecionada),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 13.5,
-                                              ),
-                                            ),
-                                            const Icon(
-                                              Icons.calendar_today_rounded,
-                                              color: Color(0xFF38BDF8),
-                                              size: 16,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      border: Border.all(color: Colors.grey.shade300),
                                     ),
-                                  ],
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          formatarData(dataSelecionada),
+                                          style: const TextStyle(fontSize: 13, color: Colors.black87),
+                                        ),
+                                        const Icon(Icons.calendar_today, size: 16, color: Colors.black54),
+                                      ],
+                                    ),
+                                  ),
                                 ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Médico / Laboratório',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: medicoController,
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: InputDecoration(
+                                    hintText: 'Ex: Fleury, Dr. Silva',
+                                    filled: true,
+                                    fillColor: Colors.grey.shade100,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Observações
+                      const Text(
+                        'Observações e Laudo',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: obsController,
+                        maxLines: 3,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'Informações relevantes, dosagens ou orientações do médico...',
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Foto do Exame
+                      const Text(
+                        'Foto do Exame / Laudo',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (fotoBase64 == null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(Icons.add_a_photo_outlined, size: 36, color: Colors.grey.shade500),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Fotografe ou anexe a foto do laudo ou receita médica',
+                                style: TextStyle(color: Colors.black54, fontSize: 13),
+                                textAlign: TextAlign.center,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Médico / Laboratório',
-                                      style: TextStyle(
-                                        color: Color(0xFFCBD5E1),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppThemeManager.instance.borderColor,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                       ),
+                                      icon: const Icon(Icons.camera_alt, size: 18),
+                                      label: const Text('Câmera'),
+                                      onPressed: () => escolherFoto(ImageSource.camera),
                                     ),
-                                    const SizedBox(height: 6),
-                                    TextField(
-                                      controller: medicoController,
-                                      style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                                      decoration: InputDecoration(
-                                        hintText: 'Ex: Dr. Roberto / Fleury',
-                                        hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                                        filled: true,
-                                        fillColor: const Color(0xFF0F172A),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(10),
-                                          borderSide: const BorderSide(color: Color(0xFF334155)),
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(10),
-                                          borderSide: const BorderSide(color: Color(0xFF334155)),
-                                        ),
-                                        contentPadding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 11,
-                                        ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppThemeManager.instance.borderColor,
+                                        side: BorderSide(color: AppThemeManager.instance.borderColor),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                       ),
+                                      icon: const Icon(Icons.photo_library, size: 18),
+                                      label: const Text('Galeria'),
+                                      onPressed: () => escolherFoto(ImageSource.gallery),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-
-                          // Observações / Resultados
-                          const Text(
-                            'Laudo / Observações do Exame',
-                            style: TextStyle(
-                              color: Color(0xFFCBD5E1),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        ),
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: obsController,
-                            maxLines: 3,
-                            style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                            decoration: InputDecoration(
-                              hintText: 'Ex: Taxas de glicemia dentro da meta. Retornar em 6 meses com novo exame.',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF334155)),
-                              ),
-                              contentPadding: const EdgeInsets.all(12),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // ── FOTO DO EXAME ────────────────────────────────
-                          const Text(
-                            'Foto do Exame / Laudo',
-                            style: TextStyle(
-                              color: Color(0xFFCBD5E1),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-
-                          if (fotoBase64 == null) ...[
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFF334155),
-                                  style: BorderStyle.solid,
+                          child: Column(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  base64Decode(fotoBase64!),
+                                  height: 140,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
                                 ),
                               ),
-                              child: Column(
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                 children: [
-                                  const Icon(
-                                    Icons.add_a_photo_outlined,
-                                    color: Color(0xFF94A3B8),
-                                    size: 32,
+                                  TextButton.icon(
+                                    icon: Icon(Icons.refresh, size: 16, color: AppThemeManager.instance.borderColor),
+                                    label: Text('Trocar Foto', style: TextStyle(color: AppThemeManager.instance.borderColor, fontSize: 13)),
+                                    onPressed: () => escolherFoto(ImageSource.camera),
                                   ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'Fotografe ou anexe a foto do laudo médico',
-                                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 14),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF0284C7),
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                          icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                                          label: const Text('Câmera', style: TextStyle(fontSize: 12.5)),
-                                          onPressed: () => escolherFoto(ImageSource.camera),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: const Color(0xFF38BDF8),
-                                            side: const BorderSide(color: Color(0xFF0284C7)),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                          icon: const Icon(Icons.photo_library_rounded, size: 18),
-                                          label: const Text('Galeria', style: TextStyle(fontSize: 12.5)),
-                                          onPressed: () => escolherFoto(ImageSource.gallery),
-                                        ),
-                                      ),
-                                    ],
+                                  TextButton.icon(
+                                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                    label: const Text('Remover', style: TextStyle(color: Colors.red, fontSize: 13)),
+                                    onPressed: () => setModalState(() => fotoBase64 = null),
                                   ),
                                 ],
                               ),
-                            ),
-                          ] else ...[
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFF10B981)),
-                              ),
-                              child: Column(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      base64Decode(fotoBase64!),
-                                      height: 170,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 20),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppThemeManager.instance.borderColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                          onPressed: () async {
+                            final titulo = tituloController.text.trim();
+                            if (titulo.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Por favor, informe o nome do exame.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+
+                            final session = UserSessionService.instance;
+                            final seniorId = session.partnerUser?.id ??
+                                session.activeLink?.seniorId ??
+                                'senior_local';
+                            final code = session.partnerUser?.connectionCode ??
+                                session.activeLink?.connectionCode ??
+                                session.currentUser.connectionCode ??
+                                '';
+
+                            final novoExame = MedicalExamModel(
+                              id: 'ex_${DateTime.now().millisecondsSinceEpoch}',
+                              seniorId: seniorId,
+                              codigoVinculo: code,
+                              titulo: titulo,
+                              categoria: categoriaSelecionada,
+                              dataExame: formatarData(dataSelecionada),
+                              medicoLaboratorio: medicoController.text.trim(),
+                              observacoes: obsController.text.trim(),
+                              imagemBase64: fotoBase64,
+                              criadoEm: DateTime.now(),
+                            );
+
+                            final messenger = ScaffoldMessenger.of(context);
+                            Navigator.pop(ctx);
+
+                            setState(() => _isLoading = true);
+                            await MedicalExamService.instance.saveExam(novoExame);
+                            await _carregarDados();
+
+                            if (mounted) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: const Row(
                                     children: [
-                                      TextButton.icon(
-                                        icon: const Icon(Icons.refresh_rounded, size: 16, color: Color(0xFF38BDF8)),
-                                        label: const Text('Trocar Foto', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 12)),
-                                        onPressed: () => escolherFoto(ImageSource.camera),
-                                      ),
-                                      TextButton.icon(
-                                        icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
-                                        label: const Text('Remover', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                                        onPressed: () {
-                                          setModalState(() {
-                                            fotoBase64 = null;
-                                          });
-                                        },
-                                      ),
+                                      Icon(Icons.check_circle, color: Colors.white),
+                                      SizedBox(width: 8),
+                                      Text('Exame médico arquivado com sucesso!'),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0284C7),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        onPressed: () async {
-                          final titulo = tituloController.text.trim();
-                          if (titulo.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Por favor, informe o nome do exame.'),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
-                            return;
-                          }
-
-                          final session = UserSessionService.instance;
-                          final seniorId = session.partnerUser?.id ??
-                              session.activeLink?.seniorId ??
-                              'senior_local';
-                          final code = session.partnerUser?.connectionCode ??
-                              session.activeLink?.connectionCode ??
-                              session.currentUser.connectionCode ??
-                              '';
-
-                          final novoExame = MedicalExamModel(
-                            id: 'ex_${DateTime.now().millisecondsSinceEpoch}',
-                            seniorId: seniorId,
-                            codigoVinculo: code,
-                            titulo: titulo,
-                            categoria: categoriaSelecionada,
-                            dataExame: formatarData(dataSelecionada),
-                            medicoLaboratorio: medicoController.text.trim(),
-                            observacoes: obsController.text.trim(),
-                            imagemBase64: fotoBase64,
-                            criadoEm: DateTime.now(),
-                          );
-
-                          final messenger = ScaffoldMessenger.of(context);
-                          Navigator.pop(ctx);
-
-                          setState(() => _isLoading = true);
-                          await MedicalExamService.instance.saveExam(novoExame);
-                          await _carregarDados();
-
-                          if (mounted) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('Exame médico arquivado com sucesso!'),
-                                backgroundColor: Color(0xFF10B981),
-                              ),
-                            );
-                          }
-                        },
-                        child: const Text(
-                          'Salvar e Guardar Exame',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                                  backgroundColor: Colors.green.shade700,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              );
+                            }
+                          },
+                          child: const Text(
+                            'Salvar Exame',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -882,7 +783,6 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
     );
   }
 
-  /// Visualizador da imagem do exame em tela cheia com zoom interativo
   void _mostrarImagemEmTelaCheia(String base64Img, String titulo) {
     try {
       final bytes = base64Decode(base64Img);
@@ -904,7 +804,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => const Center(
                         child: Text(
-                          'Não foi possível renderizar a imagem',
+                          'Não foi possível carregar a imagem',
                           style: TextStyle(color: Colors.white70),
                         ),
                       ),
@@ -918,26 +818,19 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            titulo,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          titulo,
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
@@ -953,34 +846,28 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
     }
   }
 
-  /// Exclui o exame selecionado
   Future<void> _excluirExame(MedicalExamModel exam) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Excluir Exame',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          content: Text(
-            'Deseja realmente remover o exame "${exam.titulo}"? Esta ação não pode ser desfeita.',
-            style: const TextStyle(color: Color(0xFFCBD5E1)),
-          ),
+          title: const Text('Excluir Exame', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+          content: Text('Deseja realmente remover o exame "${exam.titulo}"? Esta ação não pode ser desfeita.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.black54)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Excluir', style: TextStyle(color: Colors.white)),
+              child: const Text('Excluir'),
             ),
           ],
         );
@@ -997,9 +884,11 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
       await _carregarDados();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Exame excluído com sucesso.'),
-            backgroundColor: Colors.black87,
+          SnackBar(
+            content: const Text('Exame excluído com sucesso.'),
+            backgroundColor: Colors.grey.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
@@ -1009,19 +898,19 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
   Color _corCategoria(String categoria) {
     switch (categoria.toLowerCase()) {
       case 'sangue':
-        return const Color(0xFFEF4444);
+        return const Color(0xFFDC2626);
       case 'imagem / raio-x':
       case 'imagem':
-        return const Color(0xFF3B82F6);
+        return const Color(0xFF2563EB);
       case 'cardiológico':
-        return const Color(0xFF8B5CF6);
+        return const Color(0xFF7C3AED);
       case 'urina / fezes':
-        return const Color(0xFFF59E0B);
+        return const Color(0xFFD97706);
       case 'consulta / laudo':
       case 'consulta':
-        return const Color(0xFF10B981);
+        return const Color(0xFF059669);
       default:
-        return const Color(0xFF0EA5E9);
+        return const Color(0xFF0284C7);
     }
   }
 
@@ -1046,61 +935,59 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
     final doencas = _obterDoencasIdoso();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppThemeManager.instance.backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Saúde do Idoso',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              'Prontuário & Arquivo de Exames',
-              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-            ),
-          ],
+        title: const Text(
+          'Saúde do Idoso',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+            fontFamily: 'serif',
+          ),
         ),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.sync_rounded, color: Color(0xFF38BDF8)),
-            tooltip: 'Sincronizar com Banco de Dados',
+            icon: Icon(Icons.sync, color: AppThemeManager.instance.borderColor),
+            tooltip: 'Sincronizar dados',
             onPressed: _carregarDados,
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFF97316)),
+          ? Center(
+              child: CircularProgressIndicator(color: AppThemeManager.instance.borderColor),
             )
           : RefreshIndicator(
-              color: const Color(0xFFF97316),
-              backgroundColor: const Color(0xFF1E293B),
+              color: AppThemeManager.instance.borderColor,
               onRefresh: _carregarDados,
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 children: [
-                  // ── 1. CABEÇALHO RESUMO DO IDOSO MONITORADO ────────────────
+                  // ── 1. CABEÇALHO RESUMO DO IDOSO MONITORADO (Tema Claro) ──
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E293B), Color(0xFF172554)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      color: AppThemeManager.instance.secondaryColor,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF334155)),
+                      border: Border.all(
+                        color: AppThemeManager.instance.borderColor.withValues(alpha: 0.35),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1111,13 +998,16 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEA580C).withValues(alpha: 0.2),
+                                color: Colors.white,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: const Color(0xFFF97316), width: 1.5),
+                                border: Border.all(
+                                  color: AppThemeManager.instance.borderColor,
+                                  width: 2,
+                                ),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.elderly_rounded,
-                                color: Color(0xFFF97316),
+                                color: AppThemeManager.instance.borderColor,
                                 size: 28,
                               ),
                             ),
@@ -1129,7 +1019,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                   Text(
                                     seniorName,
                                     style: const TextStyle(
-                                      color: Colors.white,
+                                      color: Colors.black87,
                                       fontSize: 17,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -1140,18 +1030,18 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                       Container(
                                         width: 8,
                                         height: 8,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF10B981),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade600,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
                                       const SizedBox(width: 6),
-                                      const Text(
-                                        'Monitoramento Ativo',
+                                      Text(
+                                        'Prontuário Ativo',
                                         style: TextStyle(
-                                          color: Color(0xFF10B981),
+                                          color: Colors.green.shade700,
                                           fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                     ],
@@ -1161,60 +1051,47 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                             ),
                             if (code.isNotEmpty)
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0F172A),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: const Color(0xFF38BDF8)),
+                                  border: Border.all(
+                                    color: AppThemeManager.instance.borderColor.withValues(alpha: 0.5),
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.vpn_key_rounded,
-                                      color: Color(0xFF38BDF8),
-                                      size: 13,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      code,
-                                      style: const TextStyle(
-                                        color: Color(0xFF38BDF8),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.8,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  code,
+                                  style: TextStyle(
+                                    color: AppThemeManager.instance.borderColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                           ],
                         ),
                         if (dataNasc.isNotEmpty || phone.isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          const Divider(color: Color(0xFF334155), height: 1),
+                          Divider(color: Colors.grey.shade300, height: 1),
                           const SizedBox(height: 10),
                           Row(
                             children: [
                               if (dataNasc.isNotEmpty) ...[
-                                const Icon(Icons.cake_outlined, color: Color(0xFF94A3B8), size: 14),
+                                const Icon(Icons.cake_outlined, color: Colors.black54, size: 15),
                                 const SizedBox(width: 4),
                                 Text(
                                   'Nasc: $dataNasc',
-                                  style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                                  style: const TextStyle(color: Colors.black87, fontSize: 12),
                                 ),
                                 const SizedBox(width: 14),
                               ],
                               if (phone.isNotEmpty) ...[
-                                const Icon(Icons.phone_outlined, color: Color(0xFF94A3B8), size: 14),
+                                const Icon(Icons.phone_outlined, color: Colors.black54, size: 15),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
                                     phone,
-                                    style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                                    style: const TextStyle(color: Colors.black87, fontSize: 12),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -1226,15 +1103,25 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
 
-                  // ── 2. SEÇÃO DE DOENÇAS PRÉ-EXISTENTES ───────────────────────
+                  // ── 2. SEÇÃO DE DOENÇAS PRÉ-EXISTENTES (Tema Claro) ───────
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
+                      color: AppThemeManager.instance.secondaryColor,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF334155)),
+                      border: Border.all(
+                        color: AppThemeManager.instance.borderColor.withValues(alpha: 0.35),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1244,70 +1131,59 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                           children: [
                             Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEA580C).withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.health_and_safety_rounded,
-                                    color: Color(0xFFF97316),
-                                    size: 20,
-                                  ),
+                                Icon(
+                                  Icons.health_and_safety_rounded,
+                                  color: AppThemeManager.instance.borderColor,
+                                  size: 22,
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 8),
                                 const Text(
                                   'Condições Pré-existentes',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black87,
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFFF97316),
-                                side: const BorderSide(color: Color(0xFFEA580C)),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppThemeManager.instance.borderColor,
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
                               ),
-                              icon: const Icon(Icons.edit_note_rounded, size: 16),
-                              label: const Text('Editar', style: TextStyle(fontSize: 12)),
+                              icon: const Icon(Icons.edit, size: 16),
+                              label: const Text('Editar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                               onPressed: _abrirDialogEditarDoencas,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         const Text(
                           'Informadas pelo cuidador no cadastro do idoso',
-                          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                          style: TextStyle(color: Colors.black54, fontSize: 12),
                         ),
                         const SizedBox(height: 12),
 
                         if (doencas.isEmpty)
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A),
+                              color: Colors.white,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFF334155)),
+                              border: Border.all(color: Colors.grey.shade300),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
-                                const Icon(Icons.info_outline_rounded, color: Color(0xFF38BDF8), size: 20),
-                                const SizedBox(width: 10),
+                                Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                                SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Nenhuma doença informada ainda. Toque em "Editar" para registrar diagnósticos como Hipertensão, Diabetes, etc.',
-                                    style: TextStyle(color: Colors.blueGrey.shade200, fontSize: 12),
+                                    'Nenhuma condição informada ainda. Toque em "Editar" para registrar diagnósticos como Hipertensão, Diabetes, etc.',
+                                    style: TextStyle(color: Colors.black87, fontSize: 12),
                                   ),
                                 ),
                               ],
@@ -1321,29 +1197,27 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                               return Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEA580C).withValues(alpha: 0.12),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: const Color(0xFFEA580C).withValues(alpha: 0.4),
+                                    color: AppThemeManager.instance.borderColor.withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(
-                                      Icons.medical_information_rounded,
-                                      color: Color(0xFFF97316),
+                                    Icon(
+                                      Icons.check_circle_outline,
+                                      color: AppThemeManager.instance.borderColor,
                                       size: 15,
                                     ),
                                     const SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        doenca,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                                    Text(
+                                      doenca,
+                                      style: const TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ],
@@ -1355,32 +1229,25 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                     ),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 22),
 
-                  // ── 3. CABEÇALHO DA SEÇÃO DE EXAMES MÉDICOS ─────────────────
+                  // ── 3. SEÇÃO DE EXAMES E LAUDOS MÉDICOS COM FOTO ──────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.assignment_rounded,
-                              color: Color(0xFF38BDF8),
-                              size: 20,
-                            ),
+                          Icon(
+                            Icons.assignment_outlined,
+                            color: AppThemeManager.instance.borderColor,
+                            size: 22,
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           const Text(
                             'Exames & Laudos',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
+                              color: Colors.black87,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -1388,13 +1255,16 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF334155),
+                              color: AppThemeManager.instance.secondaryColor,
                               borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppThemeManager.instance.borderColor.withValues(alpha: 0.3),
+                              ),
                             ),
                             child: Text(
                               '${_exams.length}',
-                              style: const TextStyle(
-                                color: Color(0xFF38BDF8),
+                              style: TextStyle(
+                                color: AppThemeManager.instance.borderColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1404,15 +1274,13 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                       ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0284C7),
+                          backgroundColor: AppThemeManager.instance.borderColor,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        icon: const Icon(Icons.add_photo_alternate_rounded, size: 17),
+                        icon: const Icon(Icons.add_a_photo, size: 16),
                         label: const Text(
                           '+ Adicionar Exame',
                           style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
@@ -1424,15 +1292,17 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
 
                   const SizedBox(height: 12),
 
-                  // ── 4. LISTA DE EXAMES SALVOS ──────────────────────────────
+                  // ── 4. LISTA DE EXAMES SALVOS (Tema Claro) ────────────────
                   if (_exams.isEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
                       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
+                        color: AppThemeManager.instance.secondaryColor,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF334155)),
+                        border: Border.all(
+                          color: AppThemeManager.instance.borderColor.withValues(alpha: 0.3),
+                        ),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1441,13 +1311,15 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                             width: 64,
                             height: 64,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A),
+                              color: Colors.white,
                               shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFF334155)),
+                              border: Border.all(
+                                color: AppThemeManager.instance.borderColor.withValues(alpha: 0.3),
+                              ),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.document_scanner_outlined,
-                              color: Color(0xFF64748B),
+                              color: AppThemeManager.instance.borderColor,
                               size: 32,
                             ),
                           ),
@@ -1455,26 +1327,25 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                           const Text(
                             'Nenhum exame anexado ainda',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
+                              color: Colors.black87,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 6),
                           const Text(
                             'Guarde fotos de exames de sangue, laudos de raio-X, receitas e eletrocardiogramas para tê-los sempre à mão.',
-                            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+                            style: TextStyle(color: Colors.black54, fontSize: 13),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFEA580C),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                              backgroundColor: AppThemeManager.instance.borderColor,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
-                            icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                            icon: const Icon(Icons.camera_alt, size: 16),
                             label: const Text('Fotografar Primeiro Exame'),
                             onPressed: _abrirModalAdicionarExame,
                           ),
@@ -1489,14 +1360,20 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 14),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFF334155)),
+                          border: Border.all(color: Colors.grey.shade200),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Topo do card
                             Padding(
                               padding: const EdgeInsets.only(left: 14, right: 8, top: 12, bottom: 6),
                               child: Row(
@@ -1507,9 +1384,9 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: corCat.withValues(alpha: 0.15),
+                                          color: corCat.withValues(alpha: 0.1),
                                           borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: corCat.withValues(alpha: 0.5)),
+                                          border: Border.all(color: corCat.withValues(alpha: 0.4)),
                                         ),
                                         child: Text(
                                           exam.categoria,
@@ -1523,57 +1400,51 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                       const SizedBox(width: 8),
                                       Row(
                                         children: [
-                                          const Icon(Icons.event_outlined, color: Color(0xFF94A3B8), size: 13),
+                                          const Icon(Icons.event, color: Colors.black54, size: 14),
                                           const SizedBox(width: 4),
                                           Text(
                                             exam.dataExame,
-                                            style: const TextStyle(
-                                              color: Color(0xFF94A3B8),
-                                              fontSize: 12,
-                                            ),
+                                            style: const TextStyle(color: Colors.black54, fontSize: 12),
                                           ),
                                         ],
                                       ),
                                     ],
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                    icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                                     tooltip: 'Excluir Exame',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
                                     onPressed: () => _excluirExame(exam),
                                   ),
                                 ],
                               ),
                             ),
 
-                            // Título do Exame
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 14),
                               child: Text(
                                 exam.titulo,
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: Colors.black87,
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
 
-                            // Médico ou Laboratório
                             if (exam.medicoLaboratorio.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(left: 14, right: 14, top: 4),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.local_hospital_outlined, color: Color(0xFF38BDF8), size: 14),
+                                    Icon(Icons.local_hospital_outlined, color: AppThemeManager.instance.borderColor, size: 14),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
                                         exam.medicoLaboratorio,
-                                        style: const TextStyle(
-                                          color: Color(0xFF38BDF8),
+                                        style: TextStyle(
+                                          color: AppThemeManager.instance.borderColor,
                                           fontSize: 12.5,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ),
@@ -1581,7 +1452,6 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                 ),
                               ),
 
-                            // Laudo / Observações
                             if (exam.observacoes.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(left: 14, right: 14, top: 8),
@@ -1589,13 +1459,14 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A),
+                                    color: Colors.grey.shade50,
                                     borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade200),
                                   ),
                                   child: Text(
                                     exam.observacoes,
                                     style: const TextStyle(
-                                      color: Color(0xFFCBD5E1),
+                                      color: Colors.black87,
                                       fontSize: 12.5,
                                       height: 1.35,
                                     ),
@@ -1603,7 +1474,6 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                 ),
                               ),
 
-                            // Foto Anexada
                             if (temFoto) ...[
                               const SizedBox(height: 10),
                               Padding(
@@ -1633,7 +1503,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                           gradient: LinearGradient(
                                             colors: [
                                               Colors.transparent,
-                                              Colors.black.withValues(alpha: 0.85),
+                                              Colors.black.withValues(alpha: 0.8),
                                             ],
                                             begin: Alignment.topCenter,
                                             end: Alignment.bottomCenter,
@@ -1643,7 +1513,7 @@ class _SaudeIdosoViewState extends State<SaudeIdosoView> {
                                         child: const Row(
                                           mainAxisAlignment: MainAxisAlignment.center,
                                           children: [
-                                            Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
+                                            Icon(Icons.zoom_in, color: Colors.white, size: 16),
                                             SizedBox(width: 6),
                                             Text(
                                               'Toque para ampliar o laudo em tela cheia',
