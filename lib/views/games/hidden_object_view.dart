@@ -244,7 +244,7 @@ class _HiddenObjectViewState extends State<HiddenObjectView> {
     final bgColor = _backgroundColors[_score % _backgroundColors.length];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFDABDFF),
+      backgroundColor: const Color(0xFFD49FE9),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

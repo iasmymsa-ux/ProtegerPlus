@@ -211,7 +211,7 @@ class _MemoryGameViewState extends State<MemoryGameView> {
     int paresEncontrados = _isMatched.where((m) => m).length ~/ 2;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFDABDFF),
+      backgroundColor: const Color(0xFFD49FE9),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
