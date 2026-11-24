@@ -4,7 +4,7 @@ class AppThemeManager extends ChangeNotifier {
   static final AppThemeManager instance = AppThemeManager._internal();
   AppThemeManager._internal();
 
-  Color _backgroundColor = const Color(0xFFC9A0DC); // Lilás claro (Padrão do app)
+  Color _backgroundColor = const Color(0xFFD49FE9); // Lilás claro (Padrão do app)
   double _fontScale = 1.0;
   bool _isPremium = false;
 
