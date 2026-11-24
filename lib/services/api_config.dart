@@ -12,7 +12,7 @@ class ApiConfig {
 
   // URL pública HTTPS (Cloudflare Tunnel ativo agora)
   static const String defaultPublicUrl =
-      'https://prayers-served-premiere-restructuring.trycloudflare.com/proteger_plus_api';
+      'https://blackberry-governmental-categories-responsibilities.trycloudflare.com/proteger_plus_api';
 
   // IPs comuns da máquina para teste local / Wi-Fi
   static const String defaultLocalIp = '192.168.1.6';
@@ -38,7 +38,8 @@ class ApiConfig {
             custom.contains('plugins-ontario') ||
             custom.contains('heath-korean') ||
             custom.contains('medieval-vcr') ||
-            custom.contains('mazda-prepaid')) {
+            custom.contains('mazda-prepaid') ||
+            custom.contains('prayers-served')) {
           _baseUrl = defaultPublicUrl;
           await prefs.setString(_keyCustomBaseUrl, defaultPublicUrl);
         } else {
