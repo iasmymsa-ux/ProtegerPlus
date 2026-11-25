@@ -1,122 +1,288 @@
+﻿# ============================================================
+#  PROTEGER+ - Watchdog & Startup Automático
+#  Mantém MySQL (com auto-reparo Aria), Apache e Cloudflare
+#  Quick Tunnel funcionando e publica api_endpoint.json
+#  em UTF-8 SEM BOM no GitHub sempre que a URL mudar.
 # ============================================================
-#  PROTEGER+ - Script de inicialização automática completa
-#  Inicia: MySQL, Apache e Cloudflare Tunnel (URL permanente)
-#  Rodado automaticamente pelo Windows no boot.
-# ============================================================
+param(
+    [switch]$Watchdog
+)
 
-$logFile = "C:\xampp\proteger_plus_startup.log"
-$cloudflaredExe = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
-$mysqlExe   = "C:\xampp\mysql\bin\mysqld.exe"
-$mysqlCfg   = "C:\xampp\mysql\bin\my.ini"
-$apacheExe  = "C:\xampp\apache\bin\httpd.exe"
-
-# Arquivo que o app Flutter lê para saber a URL atual do túnel
-$apiEndpointFile = "C:\Users\Iasmym\Downloads\proteger_plus\api_endpoint.json"
-$repoEndpointFile = "C:\Users\Iasmym\Downloads\proteger_plus\lib\services\api_config.dart"
+$repoDir         = "C:\Users\Iasmym\Downloads\proteger_plus"
+$logFile         = "C:\xampp\proteger_plus_startup.log"
+$pidFile         = "C:\xampp\proteger_plus_watchdog.pid"
+$tunnelLog       = "C:\xampp\quick_tunnel.log"
+$cfExe           = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
+$cfConfigYml     = "C:\Users\Iasmym\.cloudflared\config.yml"
+$mysqlExe        = "C:\xampp\mysql\bin\mysqld.exe"
+$mysqlCli        = "C:\xampp\mysql\bin\mysql.exe"
+$ariaChkExe      = "C:\xampp\mysql\bin\aria_chk.exe"
+$mysqlCfg        = "C:\xampp\mysql\bin\my.ini"
+$mysqlDataDir    = "C:\xampp\mysql\data"
+$apacheExe       = "C:\xampp\apache\bin\httpd.exe"
+$apiEndpointFile = Join-Path $repoDir "api_endpoint.json"
+$utf8NoBom       = New-Object System.Text.UTF8Encoding($false)
 
 function Log($msg) {
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$ts  $msg" | Out-File -Append -FilePath $logFile
-    Write-Host "$ts  $msg"
+    $line = "$ts  $msg"
+    try {
+        if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 204800)) {
+            $tail = Get-Content $logFile -Tail 200 -ErrorAction SilentlyContinue
+            [System.IO.File]::WriteAllLines($logFile, $tail, $utf8NoBom)
+        }
+        [System.IO.File]::AppendAllText($logFile, "$line`r`n", $utf8NoBom)
+    } catch {}
+    Write-Host $line
 }
 
-function IsRunning($procName) {
-    return @(Get-Process -Name $procName -ErrorAction SilentlyContinue).Count -gt 0
+function Get-LocalLanIp {
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.InterfaceAlias -notmatch "Loopback|vEthernet|WSL|Hyper-V" -and
+                $_.IPAddress -notlike "169.254.*" -and
+                $_.IPAddress -ne "127.0.0.1"
+            } |
+            Select-Object -First 1).IPAddress
+        if ($ip) { return $ip }
+    } catch {}
+    return "192.168.1.10"
 }
 
-Log "=== PROTEGER+ STARTUP ==="
+function Test-MySqlReady {
+    try {
+        $out = & $mysqlCli -u root -e "SELECT 1" 2>&1
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
 
-# --- 1. MySQL ---
-if (IsRunning "mysqld") {
-    Log "[MySQL] Já está rodando."
-} else {
-    Log "[MySQL] Iniciando..."
+function Repair-MySqlAriaIfNeeded {
+    $tables = @(
+        "mysql\db.MAI",
+        "mysql\global_priv.MAI",
+        "mysql\proxies_priv.MAI",
+        "mysql\roles_mapping.MAI",
+        "mysql\tables_priv.MAI"
+    )
+    Push-Location $mysqlDataDir
+    try {
+        $checkOut = & $ariaChkExe -c @tables 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Log "[MySQL] Tabelas Aria corrompidas detectadas. Reparando automaticamente..."
+            & $ariaChkExe -r --zerofill @tables 2>&1 | Out-Null
+            Log "[MySQL] Reparo das tabelas de sistema concluido."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Ensure-MySql {
+    $procs = @(Get-Process -Name mysqld -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0) {
+        if (Test-MySqlReady) {
+            return $true
+        }
+        Log "[MySQL] Processo rodando mas recusando conexao (ex: erro 1130). Reiniciando e reparando..."
+        $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+
+    Repair-MySqlAriaIfNeeded
+    Log "[MySQL] Iniciando servidor..."
     Start-Process -FilePath $mysqlExe -ArgumentList "--defaults-file=`"$mysqlCfg`" --standalone" -WindowStyle Hidden
-    Start-Sleep -Seconds 5
-    if (IsRunning "mysqld") { Log "[MySQL] OK" } else { Log "[MySQL] FALHA ao iniciar" }
+
+    for ($i = 0; $i -lt 15; $i++) {
+        Start-Sleep -Seconds 1
+        if (Test-MySqlReady) {
+            Log "[MySQL] Pronto e aceitando conexoes."
+            return $true
+        }
+    }
+    Log "[MySQL] AVISO: Nao respondeu em 15s."
+    return $false
 }
 
-# --- 2. Apache ---
-if (IsRunning "httpd") {
-    Log "[Apache] Já está rodando."
-} else {
+function Ensure-Apache {
+    $procs = @(Get-Process -Name httpd -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0) { return $true }
+
     Log "[Apache] Iniciando..."
     Start-Process -FilePath $apacheExe -WindowStyle Hidden
     Start-Sleep -Seconds 3
-    if (IsRunning "httpd") { Log "[Apache] OK" } else { Log "[Apache] FALHA ao iniciar" }
+    $ok = (@(Get-Process -Name httpd -ErrorAction SilentlyContinue).Count -gt 0)
+    if ($ok) { Log "[Apache] OK" } else { Log "[Apache] FALHA ao iniciar" }
+    return $ok
 }
 
-# --- 3. Cloudflare Tunnel ---
-# Verifica se já existe um túnel com nome fixo configurado
-$namedTunnelConfig = "C:\Users\Iasmym\.cloudflared\config.yml"
-$useNamedTunnel = Test-Path $namedTunnelConfig
-
-if (IsRunning "cloudflared") {
-    Log "[Cloudflare] Tunnel já está rodando."
-} else {
-    if ($useNamedTunnel) {
-        # Túnel nomeado (URL permanente) - melhor opção
-        Log "[Cloudflare] Iniciando túnel nomeado (URL permanente)..."
-        Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel run" -WindowStyle Hidden
-        Log "[Cloudflare] Túnel nomeado iniciado."
-    } else {
-        # Túnel temporário - captura a URL e atualiza os arquivos do app
-        Log "[Cloudflare] Iniciando túnel temporário (sem conta configurada)..."
-        $tunnelLog = "C:\xampp\cloudflare_tunnel.log"
-
-        # Para qualquer processo antigo
-        Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
-
-        # Inicia e redireciona saída para arquivo de log
-        $proc = Start-Process -FilePath $cloudflaredExe `
-            -ArgumentList "tunnel --url http://localhost" `
-            -RedirectStandardError $tunnelLog `
-            -WindowStyle Hidden -PassThru
-
-        Log "[Cloudflare] Aguardando URL do túnel..."
-        $url = $null
-        $tries = 0
-        while ($tries -lt 30 -and -not $url) {
-            Start-Sleep -Seconds 2
-            $tries++
-            if (Test-Path $tunnelLog) {
-                $content = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
-                if ($content -match 'https://([a-z0-9\-]+\.trycloudflare\.com)') {
-                    $url = "https://$($Matches[1])"
-                }
-            }
-        }
-
-        if ($url) {
-            $apiUrl = "$url/proteger_plus_api"
-            Log "[Cloudflare] URL obtida: $apiUrl"
-
-            # Atualiza api_endpoint.json (lido pelo app via GitHub)
-            $json = @{
-                api_url    = $apiUrl
-                local_ip   = "192.168.1.10"
-                updated_at = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-            } | ConvertTo-Json
-            $json | Out-File -FilePath $apiEndpointFile -Encoding utf8 -Force
-
-            Log "[App] api_endpoint.json atualizado com nova URL."
-
-            # Faz git add + commit + push automático para o GitHub
-            # Assim o app Flutter lê a URL nova na próxima abertura
-            try {
-                Set-Location "C:\Users\Iasmym\Downloads\proteger_plus"
-                & git add api_endpoint.json 2>&1 | Out-Null
-                & git commit -m "auto: atualiza URL do tunel Cloudflare ($apiUrl)" 2>&1 | Out-Null
-                & git push origin main 2>&1 | Out-Null
-                Log "[Git] Push realizado com nova URL do túnel."
-            } catch {
-                Log "[Git] Falha no push: $_"
-            }
-        } else {
-            Log "[Cloudflare] AVISO: Não foi possível capturar a URL do túnel em 60s."
+function Remove-BrokenCloudflareConfig {
+    if (Test-Path $cfConfigYml) {
+        $credPath = "C:\Users\Iasmym\.cloudflared\proteger-plus.json"
+        if (-not (Test-Path $credPath)) {
+            Log "[Cloudflare] Removendo config.yml orfao para evitar erro 404 no Quick Tunnel."
+            Remove-Item $cfConfigYml -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-Log "=== STARTUP CONCLUÍDO ==="
+function Get-CurrentConfiguredApiUrl {
+    try {
+        if (Test-Path $apiEndpointFile) {
+            $raw = [System.IO.File]::ReadAllText($apiEndpointFile, [System.Text.Encoding]::UTF8).TrimStart([char]0xFEFF).Trim()
+            $obj = $raw | ConvertFrom-Json
+            if ($obj.api_url) { return $obj.api_url.ToString().TrimEnd('/') }
+        }
+    } catch {}
+    return $null
+}
 
+function Test-ApiEndpoint($apiBaseUrl) {
+    if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) { return $false }
+    try {
+        $resp = Invoke-RestMethod "$apiBaseUrl/health.php" -TimeoutSec 8 -ErrorAction Stop
+        return ($resp.sucesso -eq $true)
+    } catch {
+        return $false
+    }
+}
+
+function Save-And-PushEndpoint($apiUrl) {
+    $payload = [ordered]@{
+        api_url    = $apiUrl
+        local_ip   = (Get-LocalLanIp)
+        updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    } | ConvertTo-Json
+    [System.IO.File]::WriteAllText($apiEndpointFile, "$payload`n", $utf8NoBom)
+    Log "[App] api_endpoint.json salvo sem BOM: $apiUrl"
+
+    try {
+        Push-Location $repoDir
+        $diff = & git status --porcelain api_endpoint.json 2>&1
+        if ($diff) {
+            & git commit --only api_endpoint.json -m "auto: atualiza URL do tunel ($apiUrl)" 2>&1 | Out-Null
+            & git push origin main 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Log "[Git] Push realizado com sucesso."
+            } else {
+                Log "[Git] Push falhou (exit $LASTEXITCODE); mantendo arquivo local."
+            }
+        }
+    } catch {
+        Log "[Git] Erro no push: $_"
+    } finally {
+        Pop-Location
+    }
+}
+
+function Ensure-QuickTunnel {
+    Remove-BrokenCloudflareConfig
+
+    $userTunnels = @(Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -ne 0 })
+    $currentApiUrl = Get-CurrentConfiguredApiUrl
+
+    $logHasDeadTunnel = $false
+    if (Test-Path $tunnelLog) {
+        $tailLog = Get-Content $tunnelLog -Tail 20 -ErrorAction SilentlyContinue | Out-String
+        if ($tailLog -match "Unauthorized: Tunnel not found") {
+            $logHasDeadTunnel = $true
+        }
+    }
+
+    if (-not $logHasDeadTunnel -and $userTunnels.Count -gt 0 -and (Test-ApiEndpoint $currentApiUrl)) {
+        return $true
+    }
+
+    # Segunda checagem breve para evitar reinicio em oscilacao momentanea de rede
+    if (-not $logHasDeadTunnel -and $userTunnels.Count -gt 0 -and $currentApiUrl) {
+        Start-Sleep -Seconds 6
+        if (Test-ApiEndpoint $currentApiUrl) {
+            return $true
+        }
+    }
+
+    Log "[QuickTunnel] Iniciando novo Quick Tunnel (SessionId != 0)..."
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    if (Test-Path $tunnelLog) { Remove-Item $tunnelLog -Force -ErrorAction SilentlyContinue }
+
+    Start-Process -FilePath $cfExe `
+        -ArgumentList "tunnel --no-autoupdate --url http://localhost --metrics 127.0.0.1:20242" `
+        -RedirectStandardError $tunnelLog `
+        -WindowStyle Hidden
+
+    $hostUrl = $null
+    for ($i = 0; $i -lt 25 -and -not $hostUrl; $i++) {
+        Start-Sleep -Seconds 2
+        if (Test-Path $tunnelLog) {
+            $content = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
+            if ($content -match 'https://([a-z0-9\-]+\.trycloudflare\.com)') {
+                $hostUrl = "https://$($Matches[1])"
+            }
+        }
+    }
+
+    if (-not $hostUrl) {
+        Log "[QuickTunnel] AVISO: Nao foi possivel obter URL do tunel em 50s."
+        return $false
+    }
+
+    $apiUrl = "$hostUrl/proteger_plus_api"
+    Log "[QuickTunnel] URL capturada: $apiUrl. Validando acesso fim-a-fim..."
+
+    $verified = $false
+    for ($try = 1; $try -le 6; $try++) {
+        if (Test-ApiEndpoint $apiUrl) {
+            $verified = $true
+            break
+        }
+        Start-Sleep -Seconds 3
+    }
+
+    if ($verified) {
+        Log "[QuickTunnel] Tunel validado fim-a-fim (HTTP 200 OK)."
+        Save-And-PushEndpoint $apiUrl
+        return $true
+    }
+
+    Log "[QuickTunnel] AVISO: Tunel criado ($apiUrl) mas nao respondeu health.php ainda."
+    return $false
+}
+
+function Invoke-Cycle {
+    Ensure-MySql | Out-Null
+    Ensure-Apache | Out-Null
+    Ensure-QuickTunnel | Out-Null
+}
+
+if ($Watchdog) {
+    if (Test-Path $pidFile) {
+        $oldPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1) -as [int]
+        if ($oldPid -and $oldPid -ne $PID) {
+            $existing = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
+            if ($existing -and $existing.ProcessName -match "powershell") {
+                Log "[Watchdog] Ja existe watchdog ativo (PID $oldPid). Saindo."
+                exit 0
+            }
+        }
+    }
+    [System.IO.File]::WriteAllText($pidFile, "$PID", $utf8NoBom)
+    Log "=== PROTEGER+ WATCHDOG INICIADO (PID $PID) ==="
+
+    try {
+        while ($true) {
+            Invoke-Cycle
+            Start-Sleep -Seconds 30
+        }
+    } finally {
+        if ((Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1) -eq "$PID") {
+            Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+} else {
+    Log "=== PROTEGER+ STARTUP UNICO ==="
+    Invoke-Cycle
+    Log "=== STARTUP CONCLUIDO ==="
+}

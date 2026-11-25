@@ -93,10 +93,7 @@ class _LoginViewState extends State<LoginView> {
 
   Future<void> _showServerConfigDialog(BuildContext context) async {
     final currentUrl = ApiConfig.instance.baseUrl;
-    final initialUrl = (currentUrl.contains('broadway-hat') ||
-            currentUrl.contains('duty-alice') ||
-            currentUrl.contains('towers-mild') ||
-            currentUrl.contains('thumbzilla') || currentUrl.contains('plugins-ontario'))
+    final initialUrl = ApiConfig.isStaleTunnelUrl(currentUrl)
         ? ApiConfig.defaultPublicUrl
         : currentUrl;
     final controller = TextEditingController(text: initialUrl);
@@ -208,10 +205,20 @@ class _LoginViewState extends State<LoginView> {
                   children: [
                     TextButton(
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      onPressed: () {
-                        controller.text = ApiConfig.defaultPublicUrl;
+                      onPressed: () async {
                         setDialogState(() {
+                          isTesting = true;
                           statusMessage = null;
+                        });
+                        final working = await ApiConfig.instance.findWorkingBaseUrl();
+                        controller.text = working;
+                        final ok = await ApiConfig.instance.testConnection(working);
+                        setDialogState(() {
+                          isTesting = false;
+                          isSuccess = ok;
+                          statusMessage = ok
+                              ? 'Túnel ativo encontrado e conectado!'
+                              : 'Não foi possível alcançar o túnel automático.';
                         });
                       },
                       child: const Text('Restaurar Túnel Ativo (Online)', style: TextStyle(fontSize: 12)),
@@ -224,7 +231,7 @@ class _LoginViewState extends State<LoginView> {
                           statusMessage = null;
                         });
                       },
-                      child: const Text('Usar Wi-Fi Local (200.131.247.15)', style: TextStyle(fontSize: 12)),
+                      child: const Text('Usar Wi-Fi Local (${ApiConfig.defaultLocalIp})', style: TextStyle(fontSize: 12)),
                     ),
                   ],
                 ),
