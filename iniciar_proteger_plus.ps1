@@ -140,12 +140,15 @@ function Get-CurrentConfiguredApiUrl {
     return $null
 }
 
-function Test-ApiEndpoint($apiBaseUrl) {
+function Test-ApiEndpoint($apiBaseUrl, [switch]$LogError) {
     if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) { return $false }
     try {
         $resp = Invoke-RestMethod "$apiBaseUrl/health.php" -TimeoutSec 8 -ErrorAction Stop
         return ($resp.sucesso -eq $true)
     } catch {
+        if ($LogError) {
+            Log "[QuickTunnel] Check $apiBaseUrl falhou: $($_.Exception.Message)"
+        }
         return $false
     }
 }
@@ -178,6 +181,16 @@ function Save-And-PushEndpoint($apiUrl) {
     }
 }
 
+function Get-TunnelUrlFromLog {
+    if (Test-Path $tunnelLog) {
+        $content = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
+        if ($content -match 'https://([a-z0-9]+-[a-z0-9\-]+\.trycloudflare\.com)') {
+            return "https://$($Matches[1])"
+        }
+    }
+    return $null
+}
+
 function Ensure-QuickTunnel {
     Remove-BrokenCloudflareConfig
 
@@ -186,20 +199,31 @@ function Ensure-QuickTunnel {
 
     $logHasDeadTunnel = $false
     if (Test-Path $tunnelLog) {
-        $tailLog = Get-Content $tunnelLog -Tail 20 -ErrorAction SilentlyContinue | Out-String
-        if ($tailLog -match "Unauthorized: Tunnel not found") {
+        $tailLog = Get-Content $tunnelLog -Tail 25 -ErrorAction SilentlyContinue | Out-String
+        if ($tailLog -match "Unauthorized: Tunnel not found|status 429|Tunnelstore request failed") {
             $logHasDeadTunnel = $true
         }
     }
 
-    if (-not $logHasDeadTunnel -and $userTunnels.Count -gt 0 -and (Test-ApiEndpoint $currentApiUrl)) {
-        return $true
-    }
-
-    # Segunda checagem breve para evitar reinicio em oscilacao momentanea de rede
-    if (-not $logHasDeadTunnel -and $userTunnels.Count -gt 0 -and $currentApiUrl) {
-        Start-Sleep -Seconds 6
+    if (-not $logHasDeadTunnel -and $userTunnels.Count -gt 0) {
         if (Test-ApiEndpoint $currentApiUrl) {
+            return $true
+        }
+        # Se o cloudflared ja tem uma URL no log que apenas demorou para propagar DNS, resgata sem matar
+        $logHostUrl = Get-TunnelUrlFromLog
+        if ($logHostUrl) {
+            $logApiUrl = "$logHostUrl/proteger_plus_api"
+            if (Test-ApiEndpoint $logApiUrl) {
+                Log "[QuickTunnel] Tunel em execucao recuperado e validado: $logApiUrl"
+                Save-And-PushEndpoint $logApiUrl
+                return $true
+            }
+        }
+        Start-Sleep -Seconds 6
+        if ((Test-ApiEndpoint $currentApiUrl) -or ($logHostUrl -and (Test-ApiEndpoint "$logHostUrl/proteger_plus_api"))) {
+            if ($logHostUrl -and ($logHostUrl + "/proteger_plus_api") -ne $currentApiUrl) {
+                Save-And-PushEndpoint "$logHostUrl/proteger_plus_api"
+            }
             return $true
         }
     }
@@ -225,7 +249,7 @@ function Ensure-QuickTunnel {
         Start-Sleep -Seconds 2
         if (Test-Path $tunnelLog) {
             $content = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
-            if ($content -match 'https://([a-z0-9\-]+\.trycloudflare\.com)') {
+            if ($content -match 'https://([a-z0-9]+-[a-z0-9\-]+\.trycloudflare\.com)') {
                 $hostUrl = "https://$($Matches[1])"
             } elseif ($content -match 'status 429|Tunnelstore request failed') {
                 $rateLimited = $true
@@ -247,11 +271,11 @@ function Ensure-QuickTunnel {
     }
 
     $apiUrl = "$hostUrl/proteger_plus_api"
-    Log "[QuickTunnel] URL capturada: $apiUrl. Validando acesso fim-a-fim..."
+    Log "[QuickTunnel] URL capturada: $apiUrl. Aguardando propagacao DNS/Cloudflare..."
 
     $verified = $false
-    for ($try = 1; $try -le 6; $try++) {
-        if (Test-ApiEndpoint $apiUrl) {
+    for ($try = 1; $try -le 20; $try++) {
+        if (Test-ApiEndpoint $apiUrl -LogError:($try -eq 1 -or $try -eq 10 -or $try -eq 20)) {
             $verified = $true
             break
         }
@@ -264,7 +288,7 @@ function Ensure-QuickTunnel {
         return $true
     }
 
-    Log "[QuickTunnel] AVISO: Tunel criado ($apiUrl) mas nao respondeu health.php ainda."
+    Log "[QuickTunnel] AVISO: Tunel ($apiUrl) ainda propagando DNS; sera retestado sem matar o processo."
     return $false
 }
 
