@@ -22,6 +22,7 @@ $mysqlDataDir    = "C:\xampp\mysql\data"
 $apacheExe       = "C:\xampp\apache\bin\httpd.exe"
 $apiEndpointFile = Join-Path $repoDir "api_endpoint.json"
 $utf8NoBom       = New-Object System.Text.UTF8Encoding($false)
+$script:cfBackoffUntil = [datetime]::MinValue
 
 function Log($msg) {
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -203,6 +204,11 @@ function Ensure-QuickTunnel {
         }
     }
 
+    # Se estamos em cooldown por rate limit (HTTP 429), nao martela a API do Cloudflare
+    if ((Get-Date) -lt $script:cfBackoffUntil) {
+        return $false
+    }
+
     Log "[QuickTunnel] Iniciando novo Quick Tunnel (SessionId != 0)..."
     Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
@@ -214,14 +220,25 @@ function Ensure-QuickTunnel {
         -WindowStyle Hidden
 
     $hostUrl = $null
+    $rateLimited = $false
     for ($i = 0; $i -lt 25 -and -not $hostUrl; $i++) {
         Start-Sleep -Seconds 2
         if (Test-Path $tunnelLog) {
             $content = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
             if ($content -match 'https://([a-z0-9\-]+\.trycloudflare\.com)') {
                 $hostUrl = "https://$($Matches[1])"
+            } elseif ($content -match 'status 429|Tunnelstore request failed') {
+                $rateLimited = $true
+                break
             }
         }
+    }
+
+    if ($rateLimited) {
+        Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
+        $script:cfBackoffUntil = (Get-Date).AddMinutes(5)
+        Log "[QuickTunnel] Rate limit Cloudflare (429). Aguardando 5 minutos antes de tentar novo tunel."
+        return $false
     }
 
     if (-not $hostUrl) {
