@@ -271,7 +271,9 @@ function Ensure-QuickTunnel {
     }
 
     $apiUrl = "$hostUrl/proteger_plus_api"
-    Log "[QuickTunnel] URL capturada: $apiUrl. Aguardando propagacao DNS/Cloudflare..."
+    Log "[QuickTunnel] URL capturada: $apiUrl. Aguardando 8s para propagacao DNS..."
+    Start-Sleep -Seconds 8
+    ipconfig /flushdns | Out-Null
 
     $verified = $false
     for ($try = 1; $try -le 20; $try++) {
@@ -279,6 +281,7 @@ function Ensure-QuickTunnel {
             $verified = $true
             break
         }
+        ipconfig /flushdns | Out-Null
         Start-Sleep -Seconds 3
     }
 
